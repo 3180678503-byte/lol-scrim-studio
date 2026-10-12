@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10151c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23d5f56b'/%3E%3Ctext x='11' y='30' font-size='30' font-family='Arial' font-weight='900' fill='%2310151c'%3ES%3C/text%3E%3C/svg%3E">
+<title>内战数据演播室 · 历史复盘与比赛对比</title>
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="awards.css"><link rel="stylesheet" href="extension.css">
+</head>
+<body>
+<header class="topbar"><a class="brand" href="#overview"><span class="brand-mark">S</span><span>内战数据演播室<small>SCRIM STUDIO / MATCH INTELLIGENCE</small></span></a><span class="edition">历史内战 · 持续复盘</span></header>
+<main>
+<section class="hero"><div><p class="eyebrow">英雄联盟 · 自定义内战</p><h1>每一次对位，<br>都藏着比赛的转折。</h1><p class="hero-copy">从 BP 到对位差，再到赛后锐评。选择任意场次合并统计、对比表现变化。</p></div><div class="series"><p class="eyebrow">所选比赛 · 地图侧胜场</p><div class="series-score"><span class="blue">蓝方</span><strong>— <em>:</em> —</strong><span class="red">红方</span></div><div class="series-dots"></div><p>蓝红为每场地图侧，队员可以跨场更换</p></div></section>
+<div class="navigation"><nav aria-label="分析页面"><button data-view="overview" class="active">总览</button><button data-view="awards">赛后锐评</button><button data-view="players">选手表现</button><button data-view="draft">英雄 BP</button><button data-view="review">单局复盘</button><button data-view="compare">比赛对比</button><button data-view="methods">数据口径</button></nav><label class="scope">统计范围 <select id="scope" aria-label="统计比赛范围"><option value="all">全部比赛</option></select></label></div>
+<details id="match-selection"><summary>自选场次 · 合并任意比赛</summary><div class="match-checks"></div><p class="footnote">至少保留一场；排行、BP 与集合总评随选择更新。单局复盘独立选择比赛。</p></details>
+<div id="content" aria-live="polite"></div>
+<noscript><p>请在浏览器中启用 JavaScript，以查看比赛数据、排行与对比。</p></noscript>
+<footer><span>SCRIM STUDIO · 历史内战数据 · 赛后复盘</span><span>位置与时间线来源按单局显示。<button id="methods-link" class="text-button">查看数据口径 ↗</button></span></footer>
+</main>
+<dialog id="player-dialog"><button class="close-dialog" aria-label="关闭选手详情">×</button><div id="dialog-content"></div></dialog>
+<script src="data.js"></script><script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+private-data/
+raw/
+outputs/
+*.log
+*.tmp
+.openai/
+lol_custom_matches.json
+lol_sgp_sample.json
+lol_client_probe.json
+*credentials*
+*token-cache*
