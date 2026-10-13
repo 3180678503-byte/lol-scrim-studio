@@ -4,6 +4,8 @@
 
 新增 **[好友灵排板块](https://3180678503-byte.github.io/lol-scrim-studio/flex/)**：与内战独立统计，支持好友排行、逐局复盘与原创规则锐评、任意集合总评和 A/B 比较。当前采集中心为 qwer，只统计本人及其当场同队的客户端好友。
 
+新增 **[好友全量灵排](https://3180678503-byte.github.io/lol-scrim-studio/friends/)**：查询原来有同队记录的 26 位好友各自的灵排，再与本人合并；包括本人未参与和仅一位名单选手参战的比赛。可筛选某位选手或至少两位名单选手同队的比赛。
+
 **公开网站：[内战数据演播室](https://3180678503-byte.github.io/lol-scrim-studio/)**
 
 ## 仓库里有什么
@@ -14,6 +16,7 @@
 | `data.json`、`data.js` | 已合并的比赛、选手表现、MVP/SVP 和原创锐评 |
 | `assets/` | 英雄头像 |
 | `flex/` | 独立的好友灵排数据、排行、复盘和规则辅助娱乐锐评 |
+| `friends/` | 27 个账号共同去重的全量灵排、各人实际胜负与个人/组队战报 |
 | `skills/lol-scrim-update/` | Codex 技能，以及采集、合并、统计和网页构建脚本 |
 
 目前通过更新仓库添加比赛，网站没有直接上传比赛的按钮。看网站不需要 GitHub 账号；更新共享网站需要仓库协作权限。
@@ -115,6 +118,41 @@ git push origin main
 Windows 需要 Python 3。每次采集使用新文件名，避免覆盖私有历史；游戏客户端若以管理员身份运行，采集助手可能也需要相同权限才能读取其本机连接信息。不要把连接信息、令牌或进程命令行贴到群里或提交到 GitHub。
 
 **朋友自己的灵排请使用另一个独立数据集。** 共享 `flex/` 当前以 qwer 的队伍和胜负为中心；不要在自己的账号下采集后直接覆盖这里。朋友添加大家的自定义内战仍按上面的协作步骤完成。若要新增另一个人的灵排页面，让 Codex 建立独立目录和导航入口，保持采集中心与好友名单清楚。
+
+### 查询指定好友各自的灵排并合并
+
+`friends/` 是多账号入口。此次选取原来与 qwer 同队过的 26 位好友，加本人共 27 个账号，各自最多扫描 1,000 条记录，实际返回 **4,741 条灵排记录**。按“大区 + 比赛 ID”合并后为 **1,865 场、6,470 条个人出场记录**，日期 **2025-10-13 至 2026-10-13**。
+
+其中 **1,064 场本人未参与**；合并后识别出 **801 场本人出场**。本人单独查询只返回 230 场，而其他好友的查询补出了共同比赛，所以“接口返回场数”与“合并后出场数”会不同。两种数字在页面数据口径中分别展示。每位好友的同一局个人数据只计一次，不按查询来源重复加分。
+
+此次 **1,865 场时间线全部补齐**，可查看真实 10/15 分钟对位指标和逐局经济走势。对应分钟不足或位置无法唯一匹配时，差值留空并显示实际样本数。
+
+按个人所在队伍统计胜负、参团与占比。只有一位名单选手的场次显示个人战报；同侧有两位以上名单选手时，才比较好友 MVP/SVP 与搭车/背锅。本人未参与的比赛不会算成本人的胜局或败局。三个入口分别为内战、本人好友同队、多账号好友全量，可分别比较。
+
+后续可以直接交给 Codex：
+
+```text
+使用 $lol-scrim-update 更新 friends/ 的好友全量灵排。
+按这个数据集 cohort 名单查询这 26 位好友和本人各自的战绩，最多每人 1000 条。
+通过当前登录客户端只读查询 LCU 与对应腾讯 SGP，匹配私有身份处理历史改名。
+复用私有时间线缓存，合并同一场比赛，只统计名单中的选手。
+保留内战和 flex/；更新 friends/ 的排行、锐评、选手/好友组队筛选和比赛比较，
+检查后推送并验证三个公开入口。
+```
+
+手动采集需要先在本机用已登录客户端读取 `current-summoner` 和好友名单，生成仓库外的私有 roster：`{"self":<本人原始对象>,"selected":[<选中的好友原始对象>]}`。身份与认证信息留在本机；已有确认过的 roster 可以复用。命令如下：
+
+```powershell
+python skills/lol-scrim-update/scripts/collect_friends_flex.py --roster ../private-data/friend-roster.json --output ../private-data/cohort-YYYYMMDD.json --report ../private-data/cohort-report-YYYYMMDD.json --timeline-cache ../private-data/cohort-timelines --max-per-account 1000 --workers 4
+python skills/lol-scrim-update/scripts/merge_friends_flex.py --site friends --input ../private-data/cohort-YYYYMMDD.json --report ../private-data/cohort-report-YYYYMMDD.json
+python skills/lol-scrim-update/scripts/review_flex.py --site friends
+python skills/lol-scrim-update/scripts/build.py --site friends --resource-root . --html ../好友全量灵排演播室.html --download-icons
+git add friends assets skills README.md
+git commit -m "Update friend cohort flex records"
+git push origin main
+```
+
+`--reuse <旧本人灵排私有导出>` 可复用最初的时间线。每次新增采集使用新日期文件名；同次中断时可以复用该次已核对的账号摘要缓存。若要更改名单，先核对 `cohort` 与私有身份映射，再合并，避免把同名不同人混在一起。完整说明见 [多账号采集技能](skills/lol-scrim-update/references/flex-collection.md)。
 
 灵排评分按同位置样本的指标百分位加权：辅助重视参团、视野和控制；缺少 15 分钟帧时不造数。每局只评好友最高分（胜局 MVP / 败局 SVP）和好友最低分位；集合总评按所选场次重新计算，最低门槛 5 场，短集合按其实际场数。页面列出具体权重、证据和备选。**这是规则辅助娱乐评选，未逐场审核回放，也不是官方 MVP；最低分不等于证明输赢责任。** 锐评为原创规则文案，不是论坛网友原文。详细规则见 [好友灵排技能说明](skills/lol-scrim-update/references/flex-collection.md)。
 

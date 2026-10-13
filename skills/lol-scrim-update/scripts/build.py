@@ -24,14 +24,20 @@ def main():
     if len(keys)!=len(set(keys)) or len(numbers)!=len(set(numbers)) or not keys:
         raise ValueError('Duplicate or empty matches')
     for m in data['matches']:
-        if data.get('datasetType')=='flex':
+        if data.get('datasetType')=='friends-flex':
+            if not 1<=len(m['players'])<=10 or len({p['key'] for p in m['players']})!=len(m['players']) or sum(p.get('isSelf',False) for p in m['players'])>1 or any(p['key'] not in {c['key'] for c in data['cohort']} for p in m['players']) or m.get('queueId')!=440:
+                raise ValueError('Invalid cohort-only flex game')
+            for p in m['players']:
+                team=next(t for t in m['teams'] if t['id']==p['team'])
+                if p['win']!=team['win'] or p['teamKills']!=team['kills']:raise ValueError('Player team context mismatch')
+        elif data.get('datasetType')=='flex':
             if not 2<=len(m['players'])<=5 or len({p['key'] for p in m['players']})!=len(m['players']) or sum(p.get('isSelf',False) for p in m['players'])!=1 or any(p['team']!=m['allyTeam'] for p in m['players']) or m.get('queueId')!=440:
                 raise ValueError('Invalid allied friend-only flex game')
         elif len(m['players'])!=10 or len({p['key'] for p in m['players']})!=10:
             raise ValueError('Expected ten uniquely named participants')
         for t in m['teams']:
             kills=sum(p['kills'] for p in m['players'] if p['team']==t['id'])
-            if t['kills']<kills or data.get('datasetType')!='flex' and t['kills']!=kills:
+            if t['kills']<kills or data.get('datasetType') not in ['flex','friends-flex'] and t['kills']!=kills:
                 raise ValueError('Team kill totals mismatch')
     def js(value):
         return 'window.SCRIM_DATA='+json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).replace('<','\\u003c').replace('\u2028','\\u2028').replace('\u2029','\\u2029')+';'

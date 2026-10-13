@@ -49,7 +49,7 @@ def review(p,m):
 
 def main():
     a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);args=a.parse_args()
-    site=Path(args.site);d=load(site/'data.json');assert d['datasetType']=='flex'
+    site=Path(args.site);d=load(site/'data.json');assert d['datasetType'] in ['flex','friends-flex']
     pools={}
     for m in d['matches']:
         for p in m['players']:
@@ -65,12 +65,18 @@ def main():
                 # Mid-rank percentiles give tied zero values equal credit.
                 scores[metric]=100*(bisect.bisect_left(values,v)+bisect.bisect_right(values,v))/(2*len(values))
             p['score']=round(sum(v*weights[k] for k,v in scores.items())/sum(weights[k] for k in scores),1) if scores else 50
-            p['scoreMetrics']=scores;p['review']=review(p,m)
+            p['scoreMetrics']=scores;p['review']=review(p,dict(m,selfWin=p['win']))
         ranked=sorted(m['players'],key=lambda p:(p['score'],p['key']),reverse=True)
-        m['friendAwards']={'best':ranked[0]['key'],'worst':ranked[-1]['key'],'category':'mvp' if m['selfWin'] else 'svp','alternative':ranked[1]['key']}
+        if d['datasetType']=='friends-flex':
+            m['friendAwardsByTeam']={}
+            for side in m['trackedTeams']:
+                ps=[p for p in ranked if p['team']==side]
+                m['friendAwardsByTeam'][str(side)]={'best':ps[0]['key'],'worst':ps[-1]['key'] if len(ps)>1 else None,'category':'mvp' if ps[0]['win'] else 'svp','alternative':ps[1]['key'] if len(ps)>1 else None,'candidateCount':len(ps)}
+        else:m['friendAwards']={'best':ranked[0]['key'],'worst':ranked[-1]['key'],'category':'mvp' if m['selfWin'] else 'svp','alternative':ranked[1]['key']}
     d['scoring']={'type':'规则辅助娱乐评选','referenceGames':len(d['matches']),'weights':WEIGHTS,
       'methodology':'按本数据集内相同位置的单局样本计算指标中位秩百分位，按权重合成 0–100 分；未满 5 个位置样本的指标和缺失指标不参与，并对剩余权重重新归一。阵亡使用每分钟死亡的负值；KDA 分母最少为 1。辅助重视参团、视野、控制，不以 DPM 单独决定。分数基准随新比赛导入更新，筛选只改变汇总范围。',
       'limits':'只在本人和当前好友中比较；没有陌生人和敌方选手评奖。位置指标不能衡量英雄全部职责，治疗包括自疗，控制不等于关键控制，缺少语音与回放判断；不能据此断言输赢责任。总评至少 5 场，所选不足 5 场时按实际场数，并显示最低门槛。'}
+    if d['datasetType']=='friends-flex':d['scoring']['limits']='逐局按各侧名单选手分别比较，至少两位同侧候选才评奖；单人场次展示个人战报。集合奖项按个人实际胜局或败局汇总，至少 5 场，短集合按实际场数。'
     save(site/'data.json',d)
     print(json.dumps({'games':len(d['matches']),'reviewedPlayerGames':sum(len(m['players']) for m in d['matches'])}))
 

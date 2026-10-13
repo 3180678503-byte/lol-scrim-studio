@@ -30,3 +30,28 @@ python skills/lol-scrim-update/scripts/build.py --site flex --resource-root . --
 ## 验证与发布
 
 核对实际查询数、好友同队数、入库数、时间线数与停止原因。验证公开玩家行严格属于对应私有名单且同队，团队分母仍来自完整队伍，对位差逐项对应真实帧；重复导入不增加比赛。检查逐局奖项、任意集合、两组比较、日期筛选、手机和离线 HTML；根目录内战历史不变。发布时按已有任务授权更新仓库，再匿名验证根目录与 `/flex/`，不只验证其中一个。
+
+## 多账号好友全量采集
+
+用户指定查询好友自己的战绩时，这个新范围取代前述“只查询本人”的限制。先确定被查询的好友名单；本项目目前采用原来有同队记录的 26 位好友，加本人，共 27 个账号。公共 `friends/data.json` 的 `cohort` 是名单线索，私有历史导出中的 PUUID 用于核实改名，不靠近似昵称猜身份。
+
+在已登录客户端读取 self 与 `/lol-chat/v1/friends`，按指定范围生成仓库外的私有 roster JSON：`{"self":<current-summoner 原始对象>,"selected":[<所选好友原始对象>]}`。原始对象来自 LCU；不要从公开网页索要或保存登录凭据。再次采集可复用已核实的 roster，脚本会检查登录账号与好友集合是否仍匹配。只缺个别名单成员时先报告具体范围变化。
+
+```text
+python skills/lol-scrim-update/scripts/collect_friends_flex.py --roster ../private-data/friend-roster.json --output ../private-data/cohort-YYYYMMDD.json --report ../private-data/cohort-report-YYYYMMDD.json --timeline-cache ../private-data/cohort-timelines --reuse ../private-data/previous-self-flex.json --max-per-account 1000 --workers 4
+python skills/lol-scrim-update/scripts/merge_friends_flex.py --site friends --input ../private-data/cohort-YYYYMMDD.json --report ../private-data/cohort-report-YYYYMMDD.json
+python skills/lol-scrim-update/scripts/review_flex.py --site friends
+python skills/lol-scrim-update/scripts/build.py --site friends --resource-root . --html ../好友全量灵排演播室.html --download-icons
+```
+
+每账号使用其 PUUID 查询 SUMMARY，仍用当前客户端令牌与实际 SGP 大区。最多 4 个并发只读请求；每账号最多扫描 1,000 条，按完整比赛的 `queueId=440` 与 `mapId=11` 再核对。接口返回缺少平台字段时，使用该请求所属的已确认 SGP 平台；缺少核心赛后字段的记录不伪造。报告按账号列出数量与停止原因，局部请求失败不冒充完整收集。
+
+一次采集中按大区+比赛 ID 合并多账号记录；详情只下载一次，复用已有私有时间线缓存与旧本人导出。缓存按每次导出单独保存账号摘要，可恢复同次中断；新日期采集使用新 output，以免复用旧快照。AUTH/401 更新令牌仍只在内存，暂时连接错误最多重试一次。
+
+大批次结束后若仍有暂时连接/JSON 或 429/5xx 错误，可针对失败集合使用 `retry_friends_timelines.py --input <本次私有导出> --report <本次报告> --workers 4`，只允许一次集中补查，每场只发一个新请求。不重试明确无权限/不存在的 403/404，不无限重试；补查完重新合并以刷新真实帧覆盖与评分。
+
+合并后某人的出场数可以超过该账号直接查询的返回数量，因为其他好友查询补出了共同比赛。页面区分“接口返回灵排数”与“合并后出场数”，不能混称同一个数字。`selfPresent=false` 的比赛保留 `selfWin=null`，不能算成本人败局；每条个人记录用自己所在队伍的胜负及完整五人分母。公开只保留名单选手与匿名团队总量，位置对位差在删除其他玩家前计算。
+
+好友全量使用 `friends/`；保留 `flex/` 的本人好友同队入口与根目录的内战入口。允许只有一位名单选手时展示个人战报；同侧至少两位名单选手才评 MVP/SVP 与搭车/背锅。两侧均有名单选手时，各侧单独评选。排行榜、任意集合总评和两组比较按个人实际胜局/败局分组。提供“比赛包含某选手”及“至少两位名单选手同队”筛选。
+
+验证去重、名单身份、本人在场标记、胜/败局范围、单人战报、个人分母与真实对位值；抽样检查本人不在场的比赛与旧数据共同比赛。发布后匿名验证 `/friends/`、`/flex/` 与内战入口及相互导航。
