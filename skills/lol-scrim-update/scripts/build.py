@@ -15,18 +15,23 @@ def check(value):
         raise ValueError('Possible JWT in public data')
 
 def main():
-    a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);a.add_argument('--html');a.add_argument('--download-icons',action='store_true');args=a.parse_args()
+    a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);a.add_argument('--html');a.add_argument('--download-icons',action='store_true');a.add_argument('--resource-root');args=a.parse_args()
     site=Path(args.site); data=json.loads((site/'data.json').read_text(encoding='utf-8'))
+    resources=Path(args.resource_root) if args.resource_root else site
     check(data)
     keys=[m['matchKey'] for m in data['matches']]
     numbers=[m['number'] for m in data['matches']]
     if len(keys)!=len(set(keys)) or len(numbers)!=len(set(numbers)) or not keys:
         raise ValueError('Duplicate or empty matches')
     for m in data['matches']:
-        if len(m['players'])!=10 or len({p['key'] for p in m['players']})!=10:
+        if data.get('datasetType')=='flex':
+            if not 2<=len(m['players'])<=5 or len({p['key'] for p in m['players']})!=len(m['players']) or sum(p.get('isSelf',False) for p in m['players'])!=1 or any(p['team']!=m['allyTeam'] for p in m['players']) or m.get('queueId')!=440:
+                raise ValueError('Invalid allied friend-only flex game')
+        elif len(m['players'])!=10 or len({p['key'] for p in m['players']})!=10:
             raise ValueError('Expected ten uniquely named participants')
         for t in m['teams']:
-            if t['kills']!=sum(p['kills'] for p in m['players'] if p['team']==t['id']):
+            kills=sum(p['kills'] for p in m['players'] if p['team']==t['id'])
+            if t['kills']<kills or data.get('datasetType')!='flex' and t['kills']!=kills:
                 raise ValueError('Team kill totals mismatch')
     def js(value):
         return 'window.SCRIM_DATA='+json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).replace('<','\\u003c').replace('\u2028','\\u2028').replace('\u2029','\\u2029')+';'
@@ -35,27 +40,26 @@ def main():
     for cid in data['champions']:
         if not str(cid).isdigit():
             raise ValueError('Invalid champion id')
-        asset=site/'assets'/('champion-'+cid+'.png')
+        asset=resources/'assets'/('champion-'+cid+'.png')
         if not asset.exists() and args.download_icons:
-            try:
-                with urllib.request.urlopen('https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champion-icons/'+cid+'.png',timeout=15) as response:
-                    content=response.read(2000000)
-                if not content.startswith(b'\x89PNG\r\n\x1a\n'):
-                    raise ValueError('Unexpected image content')
-                asset.parent.mkdir(parents=True,exist_ok=True);asset.write_bytes(content)
-            except (OSError,ValueError):
-                pass
-        if not (site/'assets'/('champion-'+cid+'.png')).exists(): missing.append(cid)
+            alias=data['champions'][cid].get('alias','')
+            urls=['https://game.gtimg.cn/images/lol/act/img/champion/'+alias+'.png'] if re.fullmatch('[A-Za-z0-9]+',alias) else []
+            urls.append('https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champion-icons/'+cid+'.png')
+            for url in urls:
+                try:
+                    with urllib.request.urlopen(url,timeout=15) as response:
+                        content=response.read(2000000)
+                    if not content.startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Unexpected image content')
+                    asset.parent.mkdir(parents=True,exist_ok=True);asset.write_bytes(content);break
+                except (OSError,ValueError):pass
+        if not asset.exists(): missing.append(cid)
     if args.html:
         portable=dict(data)
-        portable['iconData']={cid:'data:image/png;base64,'+base64.b64encode((site/'assets'/('champion-'+cid+'.png')).read_bytes()).decode() for cid in data['champions'] if cid not in missing}
+        portable['iconData']={cid:'data:image/png;base64,'+base64.b64encode((resources/'assets'/('champion-'+cid+'.png')).read_bytes()).decode() for cid in data['champions'] if cid not in missing}
         html=(site/'index.html').read_text(encoding='utf-8')
-        for name in ['styles.css','awards.css','extension.css']:
-            tag='<link rel="stylesheet" href="'+name+'">'
-            if tag in html:
-                html=html.replace(tag,'<style>'+(site/name).read_text(encoding='utf-8')+'</style>')
+        html=re.sub(r'<link rel="stylesheet" href="([^"]+)">',lambda m:'<style>'+(site/m[1]).read_text(encoding='utf-8')+'</style>',html)
         html=html.replace('<script src="data.js"></script>','<script>'+js(portable)+'</script>')
-        html=html.replace('<script src="app.js"></script>','<script>'+(site/'app.js').read_text(encoding='utf-8').replace('</script','<\\/script')+'</script>')
+        html=re.sub(r'<script src="([^"]+)"></script>',lambda m:'<script>'+(site/m[1]).read_text(encoding='utf-8').replace('</script','<\\/script')+'</script>',html)
         target=Path(args.html);target.parent.mkdir(parents=True,exist_ok=True);target.write_text(html,encoding='utf-8')
     print(json.dumps({'matches':len(keys),'missingChampionIcons':missing,'offlineHtml':bool(args.html)}))
 

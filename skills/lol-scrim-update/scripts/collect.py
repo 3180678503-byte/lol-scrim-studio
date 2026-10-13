@@ -20,8 +20,8 @@ def read(client, url, auth):
         raise RuntimeError('Connection or JSON error') from None
 
 def credentials():
-    command = "Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe' OR Name='LeagueClient.exe'\" | Select-Object CommandLine,ExecutablePath | ConvertTo-Json -Compress"
-    raw = subprocess.run(['powershell', '-NoProfile', '-Command', command], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True).stdout.strip()
+    command = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe' OR Name='LeagueClient.exe'\" | Select-Object CommandLine,ExecutablePath | ConvertTo-Json -Compress"
+    raw = subprocess.run(['powershell', '-NoProfile', '-Command', command], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True).stdout.lstrip('\ufeff').strip()
     ps = json.loads(raw) if raw else []
     for p in (ps if isinstance(ps, list) else [ps]):
         line = p.get('CommandLine') or ''

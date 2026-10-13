@@ -2,6 +2,8 @@
 
 英雄联盟国服自定义内战的公开复盘看板。无需登录、无需后端，可在 GitHub Pages 或本地直接打开。
 
+新增 **[好友灵排板块](https://3180678503-byte.github.io/lol-scrim-studio/flex/)**：与内战独立统计，支持好友排行、逐局复盘与原创规则锐评、任意集合总评和 A/B 比较。当前采集中心为 qwer，只统计本人及其当场同队的客户端好友。
+
 **公开网站：[内战数据演播室](https://3180678503-byte.github.io/lol-scrim-studio/)**
 
 ## 仓库里有什么
@@ -11,6 +13,7 @@
 | `index.html`、`app.js`、CSS | 网站页面、排行、BP、单局复盘、A/B 比赛对比 |
 | `data.json`、`data.js` | 已合并的比赛、选手表现、MVP/SVP 和原创锐评 |
 | `assets/` | 英雄头像 |
+| `flex/` | 独立的好友灵排数据、排行、复盘和规则辅助娱乐锐评 |
 | `skills/lol-scrim-update/` | Codex 技能，以及采集、合并、统计和网页构建脚本 |
 
 目前通过更新仓库添加比赛，网站没有直接上传比赛的按钮。看网站不需要 GitHub 账号；更新共享网站需要仓库协作权限。
@@ -77,6 +80,43 @@
 - A/B 两组比赛比较，任意组合，比较同一选手及英雄 BP 的变化。
 
 初始数据为 2026-10-11 的四场比赛。新比赛会追加而非覆盖；蓝红为地图侧，不表示永久队伍。锐评是有依据的主观娱乐分析，不是官方评分。集合总评只显示与当前所选比赛完全相同的点评集合。
+
+## 添加好友灵排数据
+
+好友灵排以采集中心账号的已登录客户端为来源：读取本人灵排，按**采集时客户端好友列表**识别本场友方，仅保留本人及同队好友。敌方与陌生队友不进入玩家排行或评奖。好友同队不等于已经证实一起组队。
+
+本次实际读取 230 场灵排，其中 228 场有好友同队，涉及本人和 26 位好友，共 1,065 条个人出场记录，日期为 2026-07-02 至 2026-10-12；228 场时间线均已补齐。客户端名单有 79 位好友，只公开其中有同队记录的选手。另 2 场没有当前好友同队，未入库。
+
+Akari 的“收集模式”使用模式筛选和分页请求组合完成，当前脚本用 `q_440` 筛选灵排，最多扫描 1,000 场；上限不表示服务器一定能返回 1,000 场，也不代表账号终身完整战绩。原始导出保留在私有目录。
+
+后续在 **qwer 已登录客户端的电脑**上，可以发送：
+
+```text
+使用 $lol-scrim-update 按 Akari 收集模式读取本人灵排，最多 1000 场。
+按当前客户端好友名单识别本人所在队伍，只统计本人和同队好友。
+允许只读查询本机 LCU 与 Akari 配置中对应腾讯大区的 SGP；认证令牌只驻留内存。
+先同步仓库，向 flex/ 独立数据集追加，保留内战，按比赛 ID 去重并补充时间线。
+更新好友排行、逐局好友 MVP/SVP、好友背锅位和原创规则锐评，公开评分依据及限制，
+支持任意场次集合总评和 A/B 比较。检查网页后提交推送，验证公开网站的内战与灵排两个入口。
+```
+
+手动运行时，在仓库根目录使用：
+
+```powershell
+python skills/lol-scrim-update/scripts/collect_flex.py --output ../private-data/flex-YYYYMMDD.json --report ../private-data/flex-report-YYYYMMDD.json --max-games 1000 --timeline-limit 1000
+python skills/lol-scrim-update/scripts/merge_flex.py --site flex --input ../private-data/flex-YYYYMMDD.json --scrim-site .
+python skills/lol-scrim-update/scripts/review_flex.py --site flex
+python skills/lol-scrim-update/scripts/build.py --site flex --resource-root . --html ../好友灵排数据演播室.html --download-icons
+git add flex assets skills README.md
+git commit -m "Update friend flex matches"
+git push origin main
+```
+
+Windows 需要 Python 3。每次采集使用新文件名，避免覆盖私有历史；游戏客户端若以管理员身份运行，采集助手可能也需要相同权限才能读取其本机连接信息。不要把连接信息、令牌或进程命令行贴到群里或提交到 GitHub。
+
+**朋友自己的灵排请使用另一个独立数据集。** 共享 `flex/` 当前以 qwer 的队伍和胜负为中心；不要在自己的账号下采集后直接覆盖这里。朋友添加大家的自定义内战仍按上面的协作步骤完成。若要新增另一个人的灵排页面，让 Codex 建立独立目录和导航入口，保持采集中心与好友名单清楚。
+
+灵排评分按同位置样本的指标百分位加权：辅助重视参团、视野和控制；缺少 15 分钟帧时不造数。每局只评好友最高分（胜局 MVP / 败局 SVP）和好友最低分位；集合总评按所选场次重新计算，最低门槛 5 场，短集合按其实际场数。页面列出具体权重、证据和备选。**这是规则辅助娱乐评选，未逐场审核回放，也不是官方 MVP；最低分不等于证明输赢责任。** 锐评为原创规则文案，不是论坛网友原文。详细规则见 [好友灵排技能说明](skills/lol-scrim-update/references/flex-collection.md)。
 
 ## 手动更新：脚本与命令
 

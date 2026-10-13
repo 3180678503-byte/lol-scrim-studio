@@ -1,4 +1,4 @@
 interface:
-  display_name: "LOL ��ս���ݸ���"
-  short_description: "��ȡ�����Զ���������ϲ���ʷ���ݣ��������С����������ͱȽϿ���"
-  default_prompt: "ʹ�� $lol-scrim-update ��ȡ�µ��Զ�����ս���ϲ������岢��������������������"
+  display_name: "LOL 内战与好友灵排"
+  short_description: "采集国服内战与好友灵排，独立合并历史数据，更新排行、锐评和比赛对比"
+  default_prompt: "使用 $lol-scrim-update 读取新增比赛，在对应的内战或好友灵排板块合并并更新排行、锐评与对比。"

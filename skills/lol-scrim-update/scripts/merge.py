@@ -37,10 +37,11 @@ def upgrade(data):
         awards['collections'] = [{'label': data.get('date', '') + ' 原始四场总评', 'matchKeys': keys, 'records': copy.deepcopy(awards['overall']), 'dailyComments': copy.deepcopy(awards.get('dailyComments', [])), 'scopeNote': awards.get('overallScope', '')}]
     return data
 
-def normalize(item, champion_names, summaries, details, overrides):
+def normalize(item, champion_names, summaries, details, overrides, mode='custom'):
     d = item['detail']
-    if d.get('gameType') != 'CUSTOM_GAME' or len(d.get('participants', [])) != 10:
-        raise ValueError('Only verified CUSTOM_GAME 5v5 matches are supported')
+    eligible = d.get('gameType') == 'CUSTOM_GAME' if mode == 'custom' else mode == 'flex' and d.get('queueId') == 440 and d.get('mapId') == 11
+    if not eligible or len(d.get('participants', [])) != 10:
+        raise ValueError('Expected the selected game mode and ten participants')
     gid = str(d['gameId'])
     platform = d.get('platformId') or item.get('platformId')
     if not platform:

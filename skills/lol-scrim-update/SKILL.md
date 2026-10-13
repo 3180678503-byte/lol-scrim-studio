@@ -1,6 +1,6 @@
 ---
 name: lol-scrim-update
-description: "读取英雄联盟国服自定义内战，合并历史比赛，更新网站的选手排行、英雄 BP、对位差、MVP/SVP 与赛后锐评，并比较任意比赛组合。适用于新增内战、补充 Akari/LCU/SGP 战绩、更新内战看板或发布 GitHub Pages。"
+description: "读取英雄联盟国服内战或好友灵排，独立合并历史比赛，更新选手排行、英雄 BP、对位差与赛后锐评，并比较任意比赛组合。用于 Akari/LCU/SGP 战绩采集、演播室更新与 GitHub Pages 发布。"
 ---
 
 # LOL 内战数据更新
@@ -8,6 +8,8 @@ description: "读取英雄联盟国服自定义内战，合并历史比赛，更
 ## 先定位数据和网站
 
 找到当前网站的 `data.json`、`index.html`、Git remote 与已有锐评。优先使用用户已指定的仓库；未指定项目时参考 [当前演播室](references/current-project.md)。找不到本地项目时搜索工作区或克隆该仓库，不硬编码旧日期、游戏账号、安装路径、固定十人或四场。阅读 [接口与数据口径](references/data-and-api.md)；要生成评语时阅读 [评选与发布](references/review-and-publish.md)。
+
+用户要整理好友灵排时走 [好友灵排与收集模式](references/flex-collection.md)，使用独立 `flex/` 数据集；不要将下面的十人内战评奖和合并规则套到仅含友方好友的灵排数据。
 
 ## 读取真实比赛
 
