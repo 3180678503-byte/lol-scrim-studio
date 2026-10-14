@@ -82,7 +82,7 @@ function methodsView(){return `${head('好友全量战绩口径','27 个账号�
 
 function go(view){state.view=view;location.hash=view;render();}
 function render(){
- const views={overview,players:playersView,draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
+ const views={overview,players:playersView,radar:()=>window.FRIEND_RADAR.render(D,ms()),draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
  const matches=ms(),ps=matches.flatMap(m=>m.players.filter(p=>state.focus==='all'||p.key===state.focus)),wins=ps.filter(p=>p.win).length;
  $('#series-score').innerHTML=`${wins} <em>:</em> ${ps.length-wins}`;$('#series-note').textContent=`${ps.length} 条个人出场 · 胜率 ${pct(div(wins,ps.length))}`;
  $('#focus').value=state.focus;$('#group-only').checked=state.group;
@@ -93,6 +93,7 @@ function render(){
 }
 function showPlayer(key){const p=aggregate(D.matches).find(p=>p.key===key);if(!p)return;$('#dialog-content').innerHTML=`<div class="dialog-heading"><p class="eyebrow">好友卡片 · 全历史范围</p><h2>${esc(p.name)}</h2><p>${p.games} 场 / ${p.wins} 胜 / ${p.games-p.wins} 负 · ${esc(p.roles)}</p></div><div class="kpis dialog-kpis">${kpi('加权 DPM',n(p.dpm),`参团 ${pct(p.kp)}`)}${kpi('GD@15',sgn(p.gd15),`${p.samples} 个有效样本`)}${kpi('规则综合分',n(p.score,1),'同位置指标参考')}</div><div class="player-detail-list">${table(['比赛 / 英雄','胜负','K / D / A','DPM','GD@15','规则分'],[...p.ps].reverse().map(q=>[`<div class="champion">${avatar(q.championId)}<span>F${q.match.number} · ${esc(hero(q.championId).title||hero(q.championId).name)}<small>${q.match.date} ${q.match.start}</small></span></div>`,q.win?'胜':'负',`${q.kills}/${q.deaths}/${q.assists}`,n(q.dpm),sgn(q.gd15),n(q.score,1)]))}</div>`;$('#player-dialog').showModal();}
 function bind(){
+ if(state.view==='radar')window.FRIEND_RADAR.bind(render);
  $$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));$$('[data-player]').forEach(b=>b.onclick=()=>showPlayer(b.dataset.player));
  $$('[data-review]').forEach(b=>b.onclick=()=>{state.match=Number(b.dataset.review);go('review');});
  if($('#game'))$('#game').onchange=e=>{state.match=Number(e.target.value);render();};

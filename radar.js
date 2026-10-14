@@ -46,17 +46,17 @@ function model(data,matches,game,options=settings){
 function svg(m){
  const AXES=m.axes;
  const cx=320,cy=255,r=155,point=(i,k=1)=>{const t=-Math.PI/2+i*Math.PI/4;return [cx+Math.cos(t)*r*k,cy+Math.sin(t)*r*k];},coords=a=>a.map(p=>p.map(v=>v.toFixed(2)).join(',')).join(' ');
- let html=`<svg class="radar-svg" viewBox="0 0 640 550" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.title)}八项数据雷达，蓝橙两侧同位置历史百分位"><rect width="640" height="550" fill="#2b2e36"/>`;
+ let html=`<svg class="radar-svg" viewBox="0 0 640 550" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.title)}八项数据雷达，同位置历史百分位"><rect width="640" height="550" fill="#2b2e36"/>`;
  [20,40,60,80,100].forEach(k=>{html+=`<polygon points="${coords(AXES.map((_,i)=>point(i,k/100)))}" fill="none" stroke="#7a8291" stroke-opacity="${k===100?.6:.3}" stroke-width="1"/>`;});
  AXES.forEach((_,i)=>{const p=point(i);html+=`<line x1="${cx}" y1="${cy}" x2="${p[0]}" y2="${p[1]}" stroke="#768090" stroke-opacity=".25"/>`;});
- [1,0].forEach(side=>{const s=m.sides[side],valid=s.scores.every(v=>v!=null),points=s.scores.map((v,i)=>v==null?null:point(i,v/100));
+ m.sides.map((_,i)=>i).reverse().forEach(side=>{const s=m.sides[side],valid=s.scores.every(v=>v!=null),points=s.scores.map((v,i)=>v==null?null:point(i,v/100));
   if(valid)html+=`<polygon class="radar-area" points="${coords(points)}" fill="${COLORS[side]}" fill-opacity=".28" stroke="${COLORS[side]}" stroke-width="2.8"/>`;
   else{points.forEach((p,i)=>{const next=points[(i+1)%8];if(p&&next)html+=`<line x1="${p[0]}" y1="${p[1]}" x2="${next[0]}" y2="${next[1]}" stroke="${COLORS[side]}" stroke-width="2.8"/>`;});}
   points.forEach((p,i)=>{if(p)html+=`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="${COLORS[side]}"><title>${esc(s.name)} · ${AXES[i].label} ${fmt(s.raw[i],m.axes[i],m.mode==='series')} · 百分位 ${s.scores[i].toFixed(1)}</title></circle>`;});
  });
  html+=`<text x="${cx}" y="${cy-6}" text-anchor="middle" fill="#c6ccd5" opacity=".5" font-size="14">同位置</text><text x="${cx}" y="${cy+16}" text-anchor="middle" fill="#c6ccd5" opacity=".5" font-size="13">0–100</text>`;
  AXES.forEach((a,i)=>{const theta=-Math.PI/2+i*Math.PI/4,x=cx+Math.cos(theta)*211,y=cy+Math.sin(theta)*211,anchor=Math.cos(theta)>.3?'start':Math.cos(theta)<-.3?'end':'middle';
-  html+=`<g class="radar-axis" tabindex="0" data-radar-axis="${i}" aria-label="${a.label}，蓝侧${fmt(m.sides[0].raw[i],m.axes[i],m.mode==='series')}，红侧${fmt(m.sides[1].raw[i],m.axes[i],m.mode==='series')}"><title>${a.label} · ${a.unit}；参照 ${m.axes[i].poolSamples} 条同位置样本</title><text x="${x}" y="${y}" text-anchor="${anchor}" fill="#f3f5fa" font-size="18" font-weight="700">${a.label}</text><text x="${x}" y="${y+23}" text-anchor="${anchor}" fill="${COLORS[0]}" font-size="17">${fmt(m.sides[0].raw[i],m.axes[i],m.mode==='series')}</text><text x="${x}" y="${y+44}" text-anchor="${anchor}" fill="${COLORS[1]}" font-size="17">${fmt(m.sides[1].raw[i],m.axes[i],m.mode==='series')}</text></g>`;
+  html+=`<g class="radar-axis" tabindex="0" data-radar-axis="${i}" aria-label="${esc(a.label+'，'+m.sides.map(s=>s.name+' '+fmt(s.raw[i],a,m.mode==='series')).join('，'))}"><title>${a.label} · ${a.unit}；参照 ${m.axes[i].poolSamples} 条同位置样本</title><text x="${x}" y="${y}" text-anchor="${anchor}" fill="#f3f5fa" font-size="18" font-weight="700">${a.label}</text><text x="${x}" y="${y+23}" text-anchor="${anchor}" fill="${COLORS[0]}" font-size="17">${fmt(m.sides[0].raw[i],m.axes[i],m.mode==='series')}</text>${m.sides.length===2?`<text x="${x}" y="${y+44}" text-anchor="${anchor}" fill="${COLORS[1]}" font-size="17">${fmt(m.sides[1].raw[i],m.axes[i],m.mode==='series')}</text>`:''}</g>`;
  });
  return html+'</svg>';
 }
@@ -77,5 +77,5 @@ function bind(appState,rerender){
  document.querySelectorAll('[data-radar-axis]').forEach(g=>{const explain=()=>{const i=Number(g.dataset.radarAxis),a=active.axes[i];el('radar-axis-note').textContent=`${a.label} · ${a.unit} · ${active.roleName}权重 ${a.weight}% · 蓝侧 ${fmt(active.sides[0].raw[i],a,active.mode==='series')} / 红侧 ${fmt(active.sides[1].raw[i],a,active.mode==='series')} · 参照 ${active.axes[i].poolSamples} 条同位置记录`;};g.onmouseenter=explain;g.onclick=explain;g.onfocus=explain;});
  if(el('radar-save-svg'))el('radar-save-svg').onclick=()=>{const value=svg(active).replace('<svg ','<svg style="font-family:Microsoft YaHei,Arial,sans-serif" '),url=URL.createObjectURL(new Blob([value],{type:'image/svg+xml;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='内战雷达_'+active.title.replace(/[\\/:*?"<>|]/g,'_')+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
 }
-window.SCRIM_RADAR={model,render,bind,svg,ROLE_CONFIG,axes:role=>roleAxes(role).map(({get,...a})=>a),settings};
+window.SCRIM_RADAR={model,render,bind,svg,ROLE_CONFIG,metrics:roleAxes,axes:role=>roleAxes(role).map(({get,...a})=>a),settings};
 })();
