@@ -2,6 +2,7 @@
 import argparse,bisect,json
 from pathlib import Path
 from merge import load,save
+import roster_policy
 
 WEIGHTS={
  'TOP':{'kda':15,'kp':15,'survival':20,'dpm':20,'vision':5,'cc':10,'lane':15},
@@ -49,7 +50,7 @@ def review(p,m):
 
 def main():
     a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);args=a.parse_args()
-    site=Path(args.site);d=load(site/'data.json');assert d['datasetType'] in ['flex','friends-flex']
+    site=Path(args.site);d=load(site/'data.json');roster_policy.apply(d,roster_policy.load_policy(site));assert d['datasetType'] in ['flex','friends-flex']
     pools={}
     for m in d['matches']:
         for p in m['players']:

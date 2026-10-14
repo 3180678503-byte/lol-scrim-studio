@@ -2,6 +2,7 @@
 import argparse,copy,json
 from pathlib import Path
 import merge
+import roster_policy
 
 def main():
     a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);a.add_argument('--input',required=True);a.add_argument('--report',required=True);a.add_argument('--champion-metadata');args=a.parse_args()
@@ -16,7 +17,7 @@ def main():
     names={cid:c.get('name',cid) for cid,c in raw.get('champions',{}).items()};cache=Path(raw['timelineCache'])
     d=merge.load(site/'data.json') if (site/'data.json').exists() else {'schemaVersion':2,'datasetType':'friends-flex','matches':[],'champions':{}}
     if d.get('datasetType')!='friends-flex':raise ValueError('Friend cohort needs its own dataset')
-    known={m['matchKey']:m for m in d['matches']};added=0
+    known={m['matchKey']:m for m in d['matches']};previous_keys=set(known);added=0
     for item in sorted(raw['games'],key=lambda i:i['summary']['gameCreation']):
         s=copy.deepcopy(item['summary']);key=s['platformId']+':'+str(s['gameId']);tracked={p['participantId'] for p in s['participants'] if p.get('puuid') in selected}
         if not tracked or s['queueId']!=440:continue
@@ -59,6 +60,6 @@ def main():
     if args.champion_metadata:
         for c in merge.load(args.champion_metadata)['hero']:
             if str(c['heroId']) in d['champions']:d['champions'][str(c['heroId'])].update(name=c['name'],title=c['title'],alias=c['alias'])
-    merge.save(site/'data.json',d);print(json.dumps({'uniqueGames':len(known),'added':added,'withoutSelf':d['collection']['withoutSelf'],'timelines':d['collection']['timelineGames']}))
+    roster_policy.apply(d,roster_policy.load_policy(site));merge.save(site/'data.json',d);print(json.dumps({'uniqueGames':len(d['matches']),'added':len({m['matchKey'] for m in d['matches']}-previous_keys),'withoutSelf':d['collection']['withoutSelf'],'timelines':d['collection']['timelineGames']}))
 
 if __name__=='__main__':main()

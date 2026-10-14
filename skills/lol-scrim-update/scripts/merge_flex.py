@@ -2,6 +2,7 @@
 import argparse,copy,json
 from pathlib import Path
 import merge
+import roster_policy
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--site',required=True);p.add_argument('--input',required=True);p.add_argument('--scrim-site');p.add_argument('--champion-metadata');args=p.parse_args()
@@ -23,7 +24,7 @@ def main():
         raise ValueError('Different focus account; use a separate dataset or explicitly reconcile an account rename')
     if args.scrim_site:
         scrim=merge.load(Path(args.scrim_site)/'data.json');data['champions'].update(copy.deepcopy(scrim['champions']));data['sources']=scrim['sources']
-    known={m['matchKey']:m for m in data['matches']};added=[]
+    known={m['matchKey']:m for m in data['matches']};previous_keys=set(known);added=[]
     names={cid:c.get('name',cid) for cid,c in raw.get('champions',{}).items()}
     for item in sorted(raw['matches'],key=lambda i:i['sgp_summary']['gameCreation']):
         summary=copy.deepcopy(item['sgp_summary']);mine=next((p for p in summary['participants'] if p.get('puuid')==self_id),None)
@@ -71,6 +72,6 @@ def main():
         for c in merge.load(args.champion_metadata)['hero']:
             cid=str(c['heroId'])
             if cid in data['champions']:data['champions'][cid].update(name=c['name'],title=c['title'],alias=c['alias'])
-    merge.save(site/'data.json',data);print(json.dumps({'total':len(known),'added':len(added),'collection':data['collection']},ensure_ascii=False))
+    roster_policy.apply(data,roster_policy.load_policy(site));merge.save(site/'data.json',data);print(json.dumps({'total':len(data['matches']),'added':len({m['matchKey'] for m in data['matches']}-previous_keys),'collection':data['collection']},ensure_ascii=False))
 
 if __name__=='__main__':main()

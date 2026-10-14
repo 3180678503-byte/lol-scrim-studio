@@ -1,6 +1,7 @@
 """Validate public payload, write data.js and optionally a fully offline HTML."""
 import argparse, base64, json, re, urllib.request
 from pathlib import Path
+import roster_policy
 
 DENIED = {'puuid','accountid','summonerid','accesstoken','refreshtoken','token','jwt','mucjwtdto','authorization','password','remoting-auth-token','participantidentities'}
 
@@ -18,6 +19,9 @@ def main():
     a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);a.add_argument('--html');a.add_argument('--download-icons',action='store_true');a.add_argument('--resource-root');args=a.parse_args()
     site=Path(args.site); data=json.loads((site/'data.json').read_text(encoding='utf-8'))
     resources=Path(args.resource_root) if args.resource_root else site
+    policy=roster_policy.load_policy(site)
+    if data.get('datasetType') in ['flex','friends-flex'] and any(roster_policy.excluded(p['key'],policy) for p in [p for m in data['matches'] for p in m['players']]+data.get('cohort',[])):
+        raise ValueError('Excluded player present; apply roster policy with merge/review before building')
     check(data)
     keys=[m['matchKey'] for m in data['matches']]
     numbers=[m['number'] for m in data['matches']]
@@ -39,6 +43,18 @@ def main():
             kills=sum(p['kills'] for p in m['players'] if p['team']==t['id'])
             if t['kills']<kills or data.get('datasetType') not in ['flex','friends-flex'] and t['kills']!=kills:
                 raise ValueError('Team kill totals mismatch')
+        if data.get('datasetType')=='friends-flex':
+            awards=m.get('friendAwardsByTeam',{})
+            if set(awards)!=set(map(str,m['trackedTeams'])):
+                raise ValueError('Regenerate reviews after roster changes')
+            for side,a in awards.items():
+                candidate_keys={p['key'] for p in m['players'] if p['team']==int(side)}
+                if a['candidateCount']!=len(candidate_keys) or a['best'] not in candidate_keys or any(a.get(k) is not None and a[k] not in candidate_keys for k in ['worst','alternative']):
+                    raise ValueError('Regenerate reviews after roster changes')
+        elif data.get('datasetType')=='flex':
+            a=m.get('friendAwards',{});candidate_keys={p['key'] for p in m['players']}
+            if any(a.get(k) not in candidate_keys for k in ['best','worst','alternative']):
+                raise ValueError('Regenerate reviews after roster changes')
     def js(value):
         return 'window.SCRIM_DATA='+json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).replace('<','\\u003c').replace('\u2028','\\u2028').replace('\u2029','\\u2029')+';'
     (site/'data.js').write_text(js(data),encoding='utf-8')
@@ -63,9 +79,9 @@ def main():
         portable=dict(data)
         portable['iconData']={cid:'data:image/png;base64,'+base64.b64encode((resources/'assets'/('champion-'+cid+'.png')).read_bytes()).decode() for cid in data['champions'] if cid not in missing}
         html=(site/'index.html').read_text(encoding='utf-8')
-        html=re.sub(r'<link rel="stylesheet" href="([^"]+)">',lambda m:'<style>'+(site/m[1]).read_text(encoding='utf-8')+'</style>',html)
-        html=html.replace('<script src="data.js"></script>','<script>'+js(portable)+'</script>')
-        html=re.sub(r'<script src="([^"]+)"></script>',lambda m:'<script>'+(site/m[1]).read_text(encoding='utf-8').replace('</script','<\\/script')+'</script>',html)
+        html=re.sub(r'<link rel="stylesheet" href="([^"]+)">',lambda m:'<style>'+(site/m[1].split('?',1)[0]).read_text(encoding='utf-8')+'</style>',html)
+        html=re.sub(r'<script src="data.js(?:\?[^"]*)?"></script>',lambda m:'<script>'+js(portable)+'</script>',html)
+        html=re.sub(r'<script src="([^"]+)"></script>',lambda m:'<script>'+(site/m[1].split('?',1)[0]).read_text(encoding='utf-8').replace('</script','<\\/script')+'</script>',html)
         target=Path(args.html);target.parent.mkdir(parents=True,exist_ok=True);target.write_text(html,encoding='utf-8')
     print(json.dumps({'matches':len(keys),'missingChampionIcons':missing,'offlineHtml':bool(args.html)}))
 
