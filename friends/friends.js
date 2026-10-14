@@ -82,6 +82,9 @@ function methodsView(){return `${head('好友全量战绩口径',`${D.cohort.len
 
 function go(view){state.view=view;location.hash=view;render();}
 function render(){
+ const integrated=state.view==='community';
+ for(const selector of ['.hero','.navigation .scope','#match-selection','.cohort-filters']){const node=document.querySelector(selector);if(node)node.hidden=integrated;}
+
  const count=D.cohort.filter(p=>!p.isSelf).length;$('#cohort-label').textContent='英雄联盟 · 灵活排位 · '+count+' 位好友与本人';$('#cohort-footer').textContent='FRIENDS STUDIO · '+count+' 位指定好友与本人 · 规则辅助娱乐评选';
  const views={community:()=>window.COMMUNITY.render(D,ms()),reports:()=>window.FLEX_REPORTS.render(D,ms()),overview,players:playersView,radar:()=>window.FRIEND_RADAR.render(D,ms()),draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
  const matches=ms(),ps=matches.flatMap(m=>m.players.filter(p=>state.focus==='all'||p.key===state.focus)),wins=ps.filter(p=>p.win).length;

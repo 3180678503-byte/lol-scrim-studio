@@ -102,6 +102,9 @@ function renderHeader(){
 }
 function radarView(){return window.SCRIM_RADAR.render(D,selectedMatches(),match(),state,{playerButton,avatar});}
 function render(){
+ const integrated=state.view==='community';
+ for(const selector of ['.hero','.navigation .scope','#match-selection','.cohort-filters']){const node=document.querySelector(selector);if(node)node.hidden=integrated;}
+
  renderHeader();
  $$('#content .chart-hit').forEach(el=>el.onpointermove=null);
  $('#content').innerHTML=({community:()=>window.COMMUNITY.render(D,selectedMatches()),overview,awards:awardsView,players:playersView,radar:radarView,draft:draftView,review:reviewView,methods:methodsView,compare:compareView}[state.view])();
