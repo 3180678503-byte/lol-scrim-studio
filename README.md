@@ -218,3 +218,13 @@ git push origin main
 GitHub Pages 使用 `main` 分支根目录 `/`，`.nojekyll` 禁用 Jekyll，不需要构建 Actions。更新推送后等待 Pages 构建完成。朋友打开公开链接即可使用；也可以发送构建生成的单文件 HTML，双击即可离线查看。
 
 统计口径、接口、锐评字段见 [技能说明](skills/lol-scrim-update/SKILL.md)。
+
+## 群友五星评分和群聊日报
+
+三个入口均有“群友评分”：先选自己的 ID，再选单局或 04:00 划分的一天中的某位玩家，打 1～5 星、写评论并直接在网页提交。朋友无需额外账号，其他设备可查看共享评价；再次打星更新该 ID 原评分。
+
+两套灵排有“日报 / 周报”，支持群聊简版、完整面板、按玩家选择、复制文字、下载 TXT/JSON。日报为北京时间 04:00 到次日 04:00，周报为周一 04:00 到下周一 04:00；按对局开始时间归属。
+
+机器人可直接读取[好友全量日报 TXT](friends/reports/latest-daily.txt)、[好友全量周报 TXT](friends/reports/latest-weekly.txt)；同路径的 `.json` 包含 text 与每段最多 1800 字的 segments。latest 指向最新有数据且已结束的周期，当前周期使用 current 链接。
+
+朋友操作、API 存储、全部机器人链接、更新命令和测试见[评分与报表说明](docs/community-and-reports.md)。新增数据后运行 `node tools/build-community-manifest.cjs` 和 `node tools/export-flex-reports.cjs` 再构建、发布。

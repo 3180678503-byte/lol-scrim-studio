@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import {DatabaseSync} from 'node:sqlite';import Worker from '../backend/worker.mjs';import manifest from '../backend/manifest.json' with {type:'json'};
+const sqlite=new DatabaseSync(':memory:');sqlite.exec(fs.readFileSync(new URL('../backend/schema.sql',import.meta.url),'utf8'));
+class Statement{constructor(sql){this.sql=sql;this.params=[];}bind(...values){this.params=values;return this;}first(){return Promise.resolve(sqlite.prepare(this.sql).get(...this.params)||null);}all(){return Promise.resolve({results:sqlite.prepare(this.sql).all(...this.params)});}run(){return Promise.resolve(sqlite.prepare(this.sql).run(...this.params));}}
+const DB={prepare:sql=>new Statement(sql),batch:async statements=>{sqlite.exec('BEGIN');try{const result=[];for(const s of statements)result.push(/^SELECT/.test(s.sql)?await s.all():await s.run());sqlite.exec('COMMIT');return result;}catch(e){sqlite.exec('ROLLBACK');throw e;}}},env={DB,ALLOWED_ORIGINS:'https://3180678503-byte.github.io'};
+const game=Object.keys(manifest.matches)[0],target={kind:'match',matchKey:game,playerKey:manifest.members[manifest.matches[game][0]].key},a=manifest.members[0].key,b=manifest.members[1].key;
+const submit=async(body,origin='https://3180678503-byte.github.io')=>Worker.fetch(new Request('https://example.test/entries',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body)}),env);
+const first={target,raterKey:a,stars:4,comment:'<img src=x onerror=alert(1)>',requestId:'request_a_1234567890'};let r=await submit(first);assert.equal(r.status,201);let value=await r.json();assert.equal(value.voteCount,1);assert.equal(value.commentCount,1);assert.equal(value.mean,4);
+r=await submit(first);value=await r.json();assert.equal(value.commentCount,1);assert.equal(value.voteCount,1);
+value=await (await submit({...first,stars:2,comment:'',requestId:'request_b_1234567890'})).json();assert.equal(value.mean,2);assert.equal(value.voteCount,1);
+value=await (await submit({...first,raterKey:b,stars:5,comment:'不错',requestId:'request_c_1234567890'})).json();assert.equal(value.mean,3.5);assert.equal(value.voteCount,2);
+value=await (await submit({...first,stars:null,comment:'只评论',requestId:'request_d_1234567890'})).json();assert.equal(value.mean,3.5);assert.equal(value.commentCount,3);
+assert.equal((await submit({...first,raterKey:'not-a-member'})).status,400);assert.equal((await submit({...first,stars:6})).status,400);assert.equal((await submit(first,'https://other.invalid')).status,403);
+const day=Object.keys(manifest.days['friends-flex'])[0],dayPlayer=manifest.members[manifest.days['friends-flex'][day][0]].key;assert.equal((await submit({...first,target:{kind:'day',dataset:'friends-flex',day,playerKey:dayPlayer},requestId:'request_day_12345678'})).status,201);
+for(let n=0;n<15;n++)r=await submit({...first,comment:'',requestId:'rate_limit_1234567890_'+n});assert.equal(r.status,429);
+console.log(JSON.stringify({sharedStorage:true,oneVotePerID:true,updateVote:true,commentOnly:true,retryIdempotent:true,dayScope:true,validation:true,rateLimit:true,cors:true}));sqlite.close();

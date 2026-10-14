@@ -104,7 +104,7 @@ function radarView(){return window.SCRIM_RADAR.render(D,selectedMatches(),match(
 function render(){
  renderHeader();
  $$('#content .chart-hit').forEach(el=>el.onpointermove=null);
- $('#content').innerHTML=({overview,awards:awardsView,players:playersView,radar:radarView,draft:draftView,review:reviewView,methods:methodsView,compare:compareView}[state.view])();
+ $('#content').innerHTML=({community:()=>window.COMMUNITY.render(D,selectedMatches()),overview,awards:awardsView,players:playersView,radar:radarView,draft:draftView,review:reviewView,methods:methodsView,compare:compareView}[state.view])();
  if(state.view==='review'&&D.awards?.matches?.[String(state.match)]){$('.review-score').insertAdjacentHTML('afterend',`<div class="review-awards">${head('本局 MVP 与背锅席','数据依据与原创新评语，点击“争议席”查看备选与限制。')}${awardCards(D.awards.matches[String(state.match)])}</div>`);}
  if(state.view==='overview'&&D.awards){$('#content').insertAdjacentHTML('afterbegin','<button class="awards-entry" data-open-awards><span><b>新增 · 赛后锐评席</b><small>逐局 MVP / SVP / 两队背锅位 + 精确比赛集合总评</small></span><strong>让数据开口，让嘴替上班 ↗</strong></button>');}
  $$('nav button').forEach(b=>{b.classList.toggle('active',b.dataset.view===state.view);b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false');});
@@ -113,6 +113,7 @@ function render(){
 function download(value,name){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function searchRender(el,key){el.addEventListener('input',()=>{const caret=el.selectionStart;state[key]=el.value;render();const next=$('#'+el.id);next.focus();try{next.setSelectionRange(caret,caret);}catch{}});}
 function bind(){
+ if(state.view==='community')window.COMMUNITY.bind(render);
  if(state.view==='radar')window.SCRIM_RADAR.bind(state,render);
  $$('[data-open-compare]').forEach(b=>b.onclick=()=>{state.view='compare';location.hash='compare';render();});
  $$('[data-compare-group]').forEach(el=>el.onchange=()=>{const group=el.dataset.compareGroup,n=Number(el.value);state[group]=el.checked?[...state[group],n]:state[group].filter(k=>k!==n);render();});
@@ -157,7 +158,7 @@ function showPlayer(key){
  $('.close-dialog').onclick=()=>$('#player-dialog').close();
  $('#player-dialog').onclick=e=>{if(e.target===$('#player-dialog')){const b=e.target.getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)e.target.close();}};
  $('.brand').onclick=()=>{state.view='overview';render();};
- if(['overview','awards','players','radar','draft','review','methods','compare'].includes(location.hash.slice(1)))state.view=location.hash.slice(1);
- window.addEventListener('hashchange',()=>{const view=location.hash.slice(1);if(['overview','awards','players','radar','draft','review','methods','compare'].includes(view)&&state.view!==view){state.view=view;render();}});
+ if(['overview','awards','players','radar','draft','review','methods','compare','community'].includes(location.hash.slice(1)))state.view=location.hash.slice(1);
+ window.addEventListener('hashchange',()=>{const view=location.hash.slice(1);if(['overview','awards','players','radar','draft','review','methods','compare','community'].includes(view)&&state.view!==view){state.view=view;render();}});
  render();
 })();

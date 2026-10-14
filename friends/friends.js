@@ -83,17 +83,19 @@ function methodsView(){return `${head('好友全量战绩口径',`${D.cohort.len
 function go(view){state.view=view;location.hash=view;render();}
 function render(){
  const count=D.cohort.filter(p=>!p.isSelf).length;$('#cohort-label').textContent='英雄联盟 · 灵活排位 · '+count+' 位好友与本人';$('#cohort-footer').textContent='FRIENDS STUDIO · '+count+' 位指定好友与本人 · 规则辅助娱乐评选';
- const views={overview,players:playersView,radar:()=>window.FRIEND_RADAR.render(D,ms()),draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
+ const views={community:()=>window.COMMUNITY.render(D,ms()),reports:()=>window.FLEX_REPORTS.render(D,ms()),overview,players:playersView,radar:()=>window.FRIEND_RADAR.render(D,ms()),draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
  const matches=ms(),ps=matches.flatMap(m=>m.players.filter(p=>state.focus==='all'||p.key===state.focus)),wins=ps.filter(p=>p.win).length;
  $('#series-score').innerHTML=`${wins} <em>:</em> ${ps.length-wins}`;$('#series-note').textContent=`${ps.length} 条个人出场 · 胜率 ${pct(div(wins,ps.length))}`;
  $('#focus').value=state.focus;$('#group-only').checked=state.group;
  $$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));$('#scope').value=state.scope;$$('#match-selection input').forEach(i=>i.checked=state.selected.includes(Number(i.value)));
  if(matches.length&&!matches.some(m=>m.number===state.match))state.match=matches.at(-1).number;
  state.page=Math.min(state.page,Math.max(0,Math.ceil(matches.length/20)-1));
- $('#content').innerHTML=matches.length||state.view==='methods'?views[state.view]():'<div class="notice">当前筛选没有比赛。可以更换日期、选手或好友组队范围。</div>';bind();
+ $('#content').innerHTML=matches.length||['methods','reports'].includes(state.view)?views[state.view]():'<div class="notice">当前筛选没有比赛。可以更换日期、选手或好友组队范围。</div>';bind();
 }
 function showPlayer(key){const p=aggregate(D.matches).find(p=>p.key===key);if(!p)return;$('#dialog-content').innerHTML=`<div class="dialog-heading"><p class="eyebrow">好友卡片 · 全历史范围</p><h2>${esc(p.name)}</h2><p>${p.games} 场 / ${p.wins} 胜 / ${p.games-p.wins} 负 · ${esc(p.roles)}</p></div><div class="kpis dialog-kpis">${kpi('加权 DPM',n(p.dpm),`参团 ${pct(p.kp)}`)}${kpi('GD@15',sgn(p.gd15),`${p.samples} 个有效样本`)}${kpi('规则综合分',n(p.score,1),'同位置指标参考')}</div><div class="player-detail-list">${table(['比赛 / 英雄','胜负','K / D / A','DPM','GD@15','规则分'],[...p.ps].reverse().map(q=>[`<div class="champion">${avatar(q.championId)}<span>F${q.match.number} · ${esc(hero(q.championId).title||hero(q.championId).name)}<small>${q.match.date} ${q.match.start}</small></span></div>`,q.win?'胜':'负',`${q.kills}/${q.deaths}/${q.assists}`,n(q.dpm),sgn(q.gd15),n(q.score,1)]))}</div>`;$('#player-dialog').showModal();}
 function bind(){
+ if(state.view==='community')window.COMMUNITY.bind(render);
+ if(state.view==='reports')window.FLEX_REPORTS.bind(render);
  if(state.view==='radar')window.FRIEND_RADAR.bind(render);
  $$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));$$('[data-player]').forEach(b=>b.onclick=()=>showPlayer(b.dataset.player));
  $$('[data-review]').forEach(b=>b.onclick=()=>{state.match=Number(b.dataset.review);go('review');});

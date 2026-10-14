@@ -1,0 +1,9 @@
+const assert=require('node:assert/strict'),C=require('../report-core.js');
+assert.equal(C.dayKey(Date.parse('2026-10-13T03:59:59+08:00')),'2026-10-12');assert.equal(C.dayKey(Date.parse('2026-10-13T04:00:00+08:00')),'2026-10-13');assert.equal(C.dayKey(Date.parse('2026-10-14T03:59:59+08:00')),'2026-10-13');
+assert.equal(C.weekKey('2026-10-11'),'2026-10-05');assert.equal(C.weekKey('2026-10-12'),'2026-10-12');assert.equal(C.weekKey(C.dayKey(Date.parse('2026-10-12T03:59:59+08:00'))),'2026-10-05');
+const p=(key,win,damage)=>({key,name:key,win,damage,team:100,role:'JUNGLE',kills:2,deaths:1,assists:3,teamKills:10,teamDamage:damage*5,teamGold:50000,gold:10000,vision:10,cs:100,score:60,championId:1,gd15:null});
+const match=(id,time,duration,player)=>({matchKey:String(id),number:id,createdAt:time,duration,players:[player]}),data={datasetType:'friends-flex',champions:{'1':{title:'英雄'}},matches:[match(1,'2026-10-13T03:59:59+08:00',1200,p('a',false,1000)),match(2,'2026-10-13T04:00:00+08:00',600,p('a',true,1000)),match(3,'2026-10-14T03:59:59+08:00',1200,p('a',false,4000)),match(4,'2026-10-14T04:00:00+08:00',600,p('b',true,1000))]};
+const m=C.model(data,data.matches,{kind:'daily',period:'2026-10-13',now:Date.parse('2026-10-14T04:00:00+08:00')});assert.equal(m.matches,2);assert.deepEqual(m.matchKeys,['2','3']);assert.equal(m.players[0].dpm,5000/30);assert.equal(m.wins,1);assert.equal(m.losses,1);assert(m.complete);assert.equal(C.model(data,data.matches,{kind:'daily',period:'2026-10-13',player:'b'}).matches,0);
+assert.equal(C.model(data,[...data.matches,data.matches[2]],{kind:'daily',period:'2026-10-13'}).matches,2);assert.match(C.text(m),/2026-10-13 04:00 ～ 2026-10-14 04:00/);
+const body='一段话\n\n第二段\n第三段';assert.equal(C.segments(body,9).join('\n'),body);assert(C.segments('😀'.repeat(100),10).every(s=>[...s].length<=10));
+console.log(JSON.stringify({fourAMBoundary:true,mondayFourAM:true,weightedMinutes:true,dedup:true,personalOutcomes:true,segments:true}));
