@@ -4,9 +4,13 @@ from concurrent.futures import ThreadPoolExecutor,as_completed
 from pathlib import Path
 import collect
 from collect_flex import write
+from collection_window import parse_window,in_window,before_window
 
 def main():
-    a=argparse.ArgumentParser(description=__doc__);a.add_argument('--roster',required=True);a.add_argument('--output',required=True);a.add_argument('--report',required=True);a.add_argument('--timeline-cache',required=True);a.add_argument('--reuse');a.add_argument('--max-per-account',type=int,default=1000);a.add_argument('--workers',type=int,default=4);args=a.parse_args()
+    a=argparse.ArgumentParser(description=__doc__);a.add_argument('--roster',required=True);a.add_argument('--output',required=True);a.add_argument('--report',required=True);a.add_argument('--timeline-cache',required=True);a.add_argument('--reuse');a.add_argument('--max-per-account',type=int,default=1000);a.add_argument('--workers',type=int,default=4)
+    a.add_argument('--since');a.add_argument('--until');args=a.parse_args()
+    try:window=parse_window(args.since,args.until)
+    except ValueError as e:a.error(str(e))
     if not 1<=args.max_per_account<=1000 or not 1<=args.workers<=4:a.error('max-per-account 1..1000; workers 1..4')
     if Path(args.output).exists():a.error('Choose a new timestamped private output')
     roster=json.loads(Path(args.roster).read_text(encoding='utf-8'));requested={f['puuid'] for f in roster['selected']}
@@ -51,13 +55,16 @@ def main():
             for s in valid:
                 if not s.get('platformId'):s['platformId']=platform
             excluded+=len(fresh)-len(valid)
-            games.extend(valid);seen.update(str(g['gameId']) for g in fresh);pages.append({'start':start,'returned':len(page),'confirmedFlex':len(valid),'queueCounts':{str(q):sum(s.get('queueId')==q for s in page) for q in {s.get('queueId') for s in page}}})
+            included=[s for s in valid if in_window(s,window)]
+            games.extend(included);seen.update(str(g['gameId']) for g in fresh);pages.append({'start':start,'returned':len(page),'confirmedFlex':len(included),'queueCounts':{str(q):sum(s.get('queueId')==q for s in page) for q in {s.get('queueId') for s in page}}})
+            if before_window(page,window):stop='before_window';break
             if len(page)<count or not fresh:stop='short_page' if len(page)<count else 'repeated_page';break
             time.sleep(.15)
         info={'name':t.get('gameName',t.get('displayName','')),'count':len(games),'excludedNonFlex':excluded,'pages':pages,'stopReason':stop,'error':error}
         write(cached,{'games':collect.strip_secrets(games),'info':info})
         return t,games,info
     report={'phase':'summaries','accounts':[],'requestedFriends':len(selected),'completedAccounts':0,'maxPerAccount':args.max_per_account,'uniqueGames':0,'timelines':0,'timelineErrors':0}
+    if window:report['window']=window
     write(args.report,report);unique={};sources={}
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for future in as_completed([pool.submit(history_for,t) for t in targets]):
@@ -66,6 +73,7 @@ def main():
                 key=s['platformId']+':'+str(s['gameId']);unique.setdefault(key,s);sources.setdefault(key,set()).add(t['puuid'])
             report['uniqueGames']=len(unique);write(args.report,report)
     export={'collectedAt':dt.datetime.now(dt.timezone.utc).isoformat(),'self':self_player,'friends':friends,'targets':targets,'games':[{'summary':s,'sources':sorted(sources[key])} for key,s in sorted(unique.items())],'timelineCache':str(Path(args.timeline_cache).resolve())}
+    if window:export['window']=window
     try:export['champions']={str(c['id']):{k:c[k] for k in ['id','name','alias'] if k in c} for c in lcu('/lol-game-data/assets/v1/champion-summary.json') if c.get('id',0)>0}
     except RuntimeError:export['champions']={}
     write(args.output,collect.strip_secrets(export));cache=Path(args.timeline_cache);cache.mkdir(parents=True,exist_ok=True)

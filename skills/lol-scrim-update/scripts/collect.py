@@ -20,6 +20,12 @@ def read(client, url, auth):
         raise RuntimeError('Connection or JSON error') from None
 
 def credentials():
+    # A configured installation lockfile can be read without elevating the task.
+    configured = os.environ.get('LEAGUE_LOCKFILE_PATH')
+    if configured and Path(configured).is_file():
+        parts = Path(configured).read_text(encoding='utf-8').split(':')
+        if len(parts) >= 5 and parts[2].isdigit():
+            return parts[2], parts[3]
     command = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe' OR Name='LeagueClient.exe'\" | Select-Object CommandLine,ExecutablePath | ConvertTo-Json -Compress"
     raw = subprocess.run(['powershell', '-NoProfile', '-Command', command], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True).stdout.lstrip('\ufeff').strip()
     ps = json.loads(raw) if raw else []
