@@ -1,6 +1,7 @@
 """Normalize private LCU/SGP exports and merge public matches without double counting."""
 import argparse, copy, datetime as dt, json
 from pathlib import Path
+import review_timeline
 
 ROLES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY']
 ZONE = dt.timezone(dt.timedelta(hours=8))
@@ -124,6 +125,7 @@ def normalize(item, champion_names, summaries, details, overrides, mode='custom'
         for b in t['bans']:
             cid = b['championId']
             champions.setdefault(str(cid), {'id': cid, 'name': champion_names.get(str(cid), str(cid)), 'title': champion_names.get(str(cid), str(cid)), 'alias': ''})
+    review_timeline.attach(result, timeline)
     return result, champions
 
 def enrich(old, new):
@@ -158,6 +160,7 @@ def enrich(old, new):
                 p['csd' + str(minute)] = a['cs'] - b['cs']
                 p['xpd' + str(minute)] = a['xp'] - b['xp']
                 p['sampleTime' + str(minute)] = f['seconds']
+    review_timeline.preserve(new, result)
     return result
 
 def validate_awards(records, matches, scope_keys):

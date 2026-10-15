@@ -3,6 +3,7 @@ import argparse,copy,json
 from pathlib import Path
 import merge
 import roster_policy
+import review_timeline
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--site',required=True);p.add_argument('--input',required=True);p.add_argument('--scrim-site');p.add_argument('--champion-metadata');args=p.parse_args()
@@ -45,6 +46,7 @@ def main():
         m,champions=merge.normalize({'detail':detail,'sgp_summary':summary,'sgp_details':item.get('sgp_details',{}),'platformId':summary['platformId']},names,{}, {},{},mode='flex')
         m.update(queueId=440,allyTeam=mine['teamId'],selfWin=mine['win'],trackedCount=len(tracked))
         m['players']=[q for q in m['players'] if q['id'] in tracked]
+        review_timeline.redact(m)
         for q in m['players']:
             q['isSelf']=q['id']==mine['participantId']
             if original_names[q['id']] and original_names[q['id']]!=q['name']:q['nameAtMatch']=original_names[q['id']]
@@ -53,6 +55,7 @@ def main():
         for cid,c in champions.items():data['champions'].setdefault(cid,c)
         if m['matchKey'] in known:
             old=known[m['matchKey']];m['number']=old['number']
+            review_timeline.preserve(old,m)
             if len(m['frames'])<len(old.get('frames',[])):
                 for field in ['frames','events','timelineSource','detailedEventCount','peakBlue','peakRed','gd15Blue']:m[field]=old[field]
                 for q in m['players']:

@@ -79,15 +79,16 @@ function methodsView(){return `${head('数据口径与采集覆盖','可复核�
 function go(view){state.view=view;location.hash=view;render();}
 function render(){
  const integrated=state.view==='community';
- for(const selector of ['.hero','.navigation .scope','#match-selection','.cohort-filters']){const node=document.querySelector(selector);if(node)node.hidden=integrated;}
+ for(const selector of ['.hero','.navigation .scope','#match-selection','.cohort-filters']){const node=document.querySelector(selector);if(node)node.hidden=integrated||(state.view==='lab'&&selector==='.hero');}
 
- const views={community:()=>window.COMMUNITY.render(D,ms()),reports:()=>window.FLEX_REPORTS.render(D,ms()),overview,players:playersView,radar:()=>window.FRIEND_RADAR.render(D,ms()),draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
+ const views={lab:()=>window.REVIEW_LAB.render(D,ms()),community:()=>window.COMMUNITY.render(D,ms()),reports:()=>window.FLEX_REPORTS.render(D,ms()),overview,players:playersView,radar:()=>window.FRIEND_RADAR.render(D,ms()),draft:draftView,awards:awardsView,review:reviewView,compare:compareView,methods:methodsView};if(!views[state.view])state.view='overview';
  const matches=ms(),wins=matches.filter(m=>m.selfWin).length;$('#series-score').innerHTML=`${wins} <em>:</em> ${matches.length-wins}`;$('#series-note').textContent=`${matches.length} 场 · 胜率 ${pct(wins/matches.length)} · 本人 ${D.focusPlayer}`;
  $$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));$('#scope').value=state.scope;$$('#match-selection input').forEach(i=>i.checked=state.selected.includes(Number(i.value)));
  $('#content').innerHTML=views[state.view]();bind();
 }
 function showPlayer(key){const p=aggregate(D.matches).find(p=>p.key===key);if(!p)return;$('#dialog-content').innerHTML=`<div class="dialog-heading"><p class="eyebrow">好友卡片 · 全历史范围</p><h2>${esc(p.name)}</h2><p>${p.games} 场 / ${p.wins} 胜 / ${p.games-p.wins} 负 · ${esc(p.roles)}</p></div><div class="kpis dialog-kpis">${kpi('加权 DPM',n(p.dpm),`参团 ${pct(p.kp)}`)}${kpi('GD@15',sgn(p.gd15),`${p.samples} 个有效样本`)}${kpi('规则综合分',n(p.score,1),'同位置指标参考')}</div><div class="player-detail-list">${table(['比赛 / 英雄','胜负','K / D / A','DPM','GD@15','规则分'],[...p.ps].reverse().map(q=>[`<div class="champion">${avatar(q.championId)}<span>F${q.match.number} · ${esc(hero(q.championId).title||hero(q.championId).name)}<small>${q.match.date} ${q.match.start}</small></span></div>`,q.win?'胜':'负',`${q.kills}/${q.deaths}/${q.assists}`,n(q.dpm),sgn(q.gd15),n(q.score,1)]))}</div>`;$('#player-dialog').showModal();}
 function bind(){
+ if(state.view==='lab')window.REVIEW_LAB.bind(render);
  if(state.view==='community')window.COMMUNITY.bind(render);
  if(state.view==='reports')window.FLEX_REPORTS.bind(render);
  if(state.view==='radar')window.FRIEND_RADAR.bind(render);

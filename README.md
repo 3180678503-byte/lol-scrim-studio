@@ -10,6 +10,12 @@
 
 本地查看：克隆仓库后，用浏览器打开仓库根目录的 `index.html` 即可查看已有内战数据，无需安装依赖或启动服务。
 
+## 复盘实验室 · 试用版
+
+新增 [内战复盘实验室](https://3180678503-byte.github.io/lol-scrim-studio/#lab)、[好友全量复盘实验室](https://3180678503-byte.github.io/lol-scrim-studio/friends/#lab) 和 [同队灵排复盘实验室](https://3180678503-byte.github.io/lol-scrim-studio/flex/#lab)。提供同版本、同位置（可限定同英雄）的校准分、最多三个比赛转折、带时间依据的锐评、分阶段输出与经济，并可跳转给同一玩家的同一局打分。原雷达、奖项和共享评论保留。
+
+已保存旧版标签 `pre-review-lab-20261015` 和备份分支。公式、更新方法及保留后续比赛的回退命令见 [复盘实验室说明](docs/review-lab.md)。
+
 ## 仓库里有什么
 
 | 文件 / 目录 | 内容 |

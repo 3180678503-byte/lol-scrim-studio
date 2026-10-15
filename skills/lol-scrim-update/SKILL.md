@@ -43,6 +43,8 @@ python scripts/build.py --site <网站根目录> [--html <分享用单文件HTML
 
 ## 验证和交付
 
+有 `#lab` 复盘实验室时，保留 `review-core.js`、`review-lab.js`/CSS 及 `review_timeline.py`。各 merge 已接入原始时间线的允许字段投影，名单筛选后必须执行 `review_timeline.redact`，重复导入保留更完整证据。旧缓存补充使用仓库 `tools/enrich-review-timelines.py`；公式与回退见 `docs/review-lab.md`。校准分与原版雷达分、规则分分别展示；缺项或每项不足 5 条其他有效参照不补中性分。验证 `tests/review-core.test.cjs` 和 `tests/test_review_timeline.py`，并核对复盘到共享评分链接的比赛和玩家一致。
+
 核对新比赛数、重复数、双方击杀与选手合计、BP 分母、数据覆盖和锐评范围。验证重复导入不会增加场数、未知位置不崩溃、未满 15 分钟显示空值；检查桌面与手机布局、选择场次、A/B 比较、逐局锐评和离线 HTML。只在新变更需要时重测。
 
 按用户意图更新仓库与公开站点，不默认套用旧仓库或旧授权。发布前检查实际 `git diff` 和暂存文件，不发布原始战绩、PUUID、认证头、令牌或本机连接信息。GitHub Pages 发布后，用无需登录的访问验证页面和数据，再交付公开链接、仓库链接、新增比赛列表及缺失项。没有完成上线就明确说明实际状态。

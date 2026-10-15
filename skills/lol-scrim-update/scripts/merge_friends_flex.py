@@ -3,6 +3,7 @@ import argparse,copy,json
 from pathlib import Path
 import merge
 import roster_policy
+import review_timeline
 
 def main():
     a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);a.add_argument('--input',required=True);a.add_argument('--report',required=True);a.add_argument('--champion-metadata');args=a.parse_args()
@@ -34,6 +35,7 @@ def main():
         m,champions=merge.normalize({'detail':detail,'sgp_summary':s,'sgp_details':timeline,'platformId':s['platformId']},names,{},{},{},mode='flex')
         m['players']=[p for p in m['players'] if p['id'] in tracked]
         for p in m['players']:p['isSelf']=p['id']==is_self
+        review_timeline.redact(m)
         owner_row=next((p for p in m['players'] if p['isSelf']),None)
         sides=sorted({p['team'] for p in m['players']},key=lambda side:-sum(p['team']==side for p in m['players']))
         m.update(queueId=440,trackedCount=len(tracked),selfPresent=bool(owner_row),selfWin=owner_row['win'] if owner_row else None,allyTeam=owner_row['team'] if owner_row else sides[0],sourcePlayers=source_players,trackedTeams=sides)
@@ -42,6 +44,7 @@ def main():
         m['events']=[e for e in m['events'] if e['type']!='CHAMPION_KILL']
         if key in known:
             old=known[key];m['number']=old['number']
+            review_timeline.preserve(old,m)
             if len(old.get('frames',[]))>len(m['frames']):
                 for field in ['frames','events','timelineSource','detailedEventCount','peakBlue','peakRed','gd15Blue']:m[field]=old[field]
                 for p in m['players']:

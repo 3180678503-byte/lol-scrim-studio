@@ -1,6 +1,7 @@
 """Apply a confirmed roster exclusion policy to flex imports without changing team totals."""
 import hashlib,json
 from pathlib import Path
+import review_timeline
 
 def load_policy(site):
     site=Path(site)
@@ -19,6 +20,7 @@ def apply(data,policy):
     for m in data['matches']:
         ids={p['id'] for p in m['players'] if excluded(p['key'],policy)}
         removed+=len(ids);m['players']=[p for p in m['players'] if p['id'] not in ids]
+        review_timeline.redact(m)
         if not m['players'] or data['datasetType']=='flex' and not any(not p.get('isSelf') for p in m['players']):continue
         m['trackedCount']=len(m['players'])
         if 'sourcePlayers' in m:m['sourcePlayers']=[p for p in m['sourcePlayers'] if not excluded(p['key'],policy)]
