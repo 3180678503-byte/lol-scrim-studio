@@ -37,11 +37,15 @@ class WindowsBackend:
         result=subprocess.run(['powershell.exe','-NoProfile','-Command',command],env=env,capture_output=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode:raise RuntimeError('WeGame startup failed')
         last='Waiting for signed-in WeGame'
-        for _ in range(24):
+        for attempt in range(24):
             time.sleep(3);rows=self.processes()
             if any(p['name'] in CLIENTS for p in rows.values()):return {'method':'WeGame startup'}
             wegame=[p for p in rows.values() if p['name']=='wegame.exe']
             if len(wegame)!=1:continue
+            # The first URL may arrive before cold-start login has initialized.
+            if attempt%3==0:
+                subprocess.run(['powershell.exe','-NoProfile','-Command',command],env=env,capture_output=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
+                time.sleep(2)
             # Run desktop APIs in a fresh process to attach to the active desktop.
             result=subprocess.run([sys.executable,str(Path(__file__).with_name('wegame_ui.py')),'--wegame-pid',str(wegame[0]['pid'])],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
             if not result.returncode:return json.loads(result.stdout)
