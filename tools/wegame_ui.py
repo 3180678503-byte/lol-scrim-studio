@@ -115,11 +115,24 @@ def click_launch(expected_pid,allowed_children=()):
         time.sleep(1)
         if u.GetForegroundWindow()!=h:raise RuntimeError('Cannot bring WeGame to foreground')
         u.GetWindowRect(h,ctypes.byref(r));image=ImageGrab.grab()
-        nav_x,nav_y=league_icon(image,(r.left,r.top,r.right,r.bottom))
+        u.WindowFromPoint.argtypes=[w.POINT];u.WindowFromPoint.restype=w.HWND
+        u.ScreenToClient.argtypes=[w.HWND,ctypes.POINTER(w.POINT)]
+        u.PostMessageW.argtypes=[w.HWND,w.UINT,w.WPARAM,w.LPARAM];u.PostMessageW.restype=w.BOOL
         u.SetCursorPos.argtypes=[ctypes.c_int,ctypes.c_int]
-        u.mouse_event.argtypes=[w.DWORD,w.DWORD,w.DWORD,w.DWORD,ctypes.c_size_t]
-        if u.GetForegroundWindow()!=h or not u.SetCursorPos(nav_x,nav_y):raise RuntimeError('Cannot select League of Legends in WeGame')
-        u.mouse_event(2,0,0,0,0);u.mouse_event(4,0,0,0,0);time.sleep(2)
+        def click(x,y):
+            if u.GetForegroundWindow()!=h:raise RuntimeError('WeGame foreground changed before click')
+            target=u.WindowFromPoint(w.POINT(x,y));owner=w.DWORD();u.GetWindowThreadProcessId(target,ctypes.byref(owner))
+            if owner.value not in allowed_pids:raise RuntimeError('Observed WeGame control is covered by another application')
+            point=w.POINT(x,y)
+            if not u.ScreenToClient(target,ctypes.byref(point)):raise RuntimeError('Cannot map the WeGame control')
+            u.SetCursorPos(x,y);time.sleep(.1)
+            location=(point.y<<16)|(point.x&0xffff)
+            if not u.PostMessageW(target,0x201,1,location):raise RuntimeError('WeGame refused the observed control click')
+            time.sleep(.08)
+            if not u.PostMessageW(target,0x202,0,location):raise RuntimeError('WeGame refused the observed control release')
+        nav_x,nav_y=league_icon(image,(r.left,r.top,r.right,r.bottom))
+        # Use the label in the same row; its logo provides the visual anchor.
+        click(nav_x+int((r.right-r.left)*.035),nav_y);time.sleep(2)
         if u.GetForegroundWindow()!=h:raise RuntimeError('Foreground changed after selecting League')
         image=ImageGrab.grab()
         box=launch_button(image,(r.left,r.top,r.right,r.bottom))
@@ -127,14 +140,9 @@ def click_launch(expected_pid,allowed_children=()):
         actual=label_mask(image,box);expected=label_mask(reference,(0,0,reference.width,reference.height))
         if sum(a!=b for a,b in zip(actual,expected))/len(actual)>.15:
             raise RuntimeError('WeGame button label changed; expected the observed Launch label')
-        if u.GetForegroundWindow()!=h:raise RuntimeError('Foreground changed before launch')
         x=(box[0]+box[2])//2;y=(box[1]+box[3])//2
-        if not u.SetCursorPos(x,y):raise RuntimeError('WeGame input requires the same administrator level as WeGame')
-        point=w.POINT();u.GetCursorPos(ctypes.byref(point))
-        if (point.x,point.y)!=(x,y):raise RuntimeError('Cursor moved before launch')
-        u.mouse_event.argtypes=[w.DWORD,w.DWORD,w.DWORD,w.DWORD,ctypes.c_size_t]
-        u.mouse_event(2,0,0,0,0);u.mouse_event(4,0,0,0,0)
-        return {'method':'WeGame launch button','clicked':[x,y]}
+        click(x,y)
+        return {'method':'WeGame launch button','input':'observed window controls','clicked':[x,y]}
     finally:u.CloseDesktop(desktop)
 
 if __name__=='__main__':
