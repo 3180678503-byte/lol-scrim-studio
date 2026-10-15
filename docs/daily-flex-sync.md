@@ -28,4 +28,4 @@ python tools/run_daily_flex.py --private-root C:/private/lol --node C:/runtime/n
 
 本机 WeGame 与国服客户端以管理员身份运行，当前版本的安装目录 lockfile 为空，因此 Windows 任务使用同一用户的“最高权限”运行，读取进程中的本机连接参数并操作 WeGame。有效 lockfile 仍可通过 `LEAGUE_LOCKFILE_PATH` 或 `--league-lockfile` 使用。连接凭据只驻留内存，不输出或复制到日志，不修改 Windows UAC 设置。
 
-WeGame 的启动控件使用窗口归属、右下角黄色按钮形状与“启动”文字图样共同匹配，窗口移动后仍可识别；匹配不唯一、桌面不可操作或按钮文字改变时停止点击。文字参考图只包含启动按钮，没有玩家信息。
+WeGame 的启动步骤先在左侧最近游戏中匹配英雄联盟图标，再通过窗口归属、右下角黄色按钮形状与“启动”文字图样共同匹配，窗口移动后仍可识别；匹配不唯一、桌面不可操作或按钮文字改变时停止点击。参考图只包含游戏图标和启动按钮，没有玩家信息。自动操作依赖 Python 的 Pillow、NumPy，本机已安装。

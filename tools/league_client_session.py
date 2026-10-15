@@ -92,7 +92,7 @@ class ClientSession:
     def open(self):
         before=self.backend.processes();self.initial=set(before)
         self.preexisting=any(p['name'] in CLIENTS for p in before.values())
-        self.events.append({'action':'reuse-existing' if self.preexisting else 'launch-wegame'})
+        self.events.append({'action':'reuse-existing' if self.preexisting else 'launch-wegame','wegameWasRunning':any(p['name']=='wegame.exe' for p in before.values())})
         if not self.preexisting:self.events.append(self.backend.launch())
         deadline=self.backend.clock()+self.timeout;last='Waiting for League client login'
         while self.backend.clock()<deadline:

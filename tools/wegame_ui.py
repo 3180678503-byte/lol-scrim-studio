@@ -3,6 +3,29 @@ import ctypes,json,time
 from ctypes import wintypes as w
 from pathlib import Path
 from PIL import ImageGrab,Image
+import numpy as np
+
+def league_icon(image,bounds):
+    """Match the LoL logo in the left recent-games list, excluding its background."""
+    left,top,right,bottom=bounds;width=right-left;height=bottom-top
+    area=(max(0,left),max(0,int(top+height*.12)),min(image.width,int(left+width*.16)),min(image.height,int(top+height*.82)))
+    crop=image.crop(area);source=np.asarray(crop.resize((crop.width//2,crop.height//2)),dtype=np.float32)
+    reference=Image.open(Path(__file__).with_name('wegame-league-icon.png')).convert('RGB');best=None
+    for scale in [.75,1,1.25,1.5]:
+        template=np.asarray(reference.resize((int(reference.width*scale/2),int(reference.height*scale/2))),dtype=np.float32)
+        th,tw=template.shape[:2];oh=source.shape[0]-th+1;ow=source.shape[1]-tw+1
+        if oh<=0 or ow<=0:continue
+        score=np.zeros((oh,ow),dtype=np.float32);count=0
+        for y in range(0,th,2):
+            for x in range(0,tw,2):
+                pixel=template[y,x]
+                if pixel.sum()<170:continue
+                score+=np.abs(source[y:y+oh,x:x+ow]-pixel).mean(axis=2);count+=1
+        if not count:continue
+        score/=count;index=np.unravel_index(np.argmin(score),score.shape);value=float(score[index])
+        if best is None or value<best[0]:best=(value,area[0]+int((index[1]+tw/2)*2),area[1]+int((index[0]+th/2)*2))
+    if not best or best[0]>23:raise RuntimeError('Cannot identify League of Legends in WeGame recent games')
+    return best[1],best[2]
 
 def launch_button(image,bounds):
     left,top,right,bottom=bounds; width=right-left;height=bottom-top
@@ -91,6 +114,13 @@ def click_launch(expected_pid):
         time.sleep(1)
         if u.GetForegroundWindow()!=h:raise RuntimeError('Cannot bring WeGame to foreground')
         u.GetWindowRect(h,ctypes.byref(r));image=ImageGrab.grab()
+        nav_x,nav_y=league_icon(image,(r.left,r.top,r.right,r.bottom))
+        u.SetCursorPos.argtypes=[ctypes.c_int,ctypes.c_int]
+        u.mouse_event.argtypes=[w.DWORD,w.DWORD,w.DWORD,w.DWORD,ctypes.c_size_t]
+        if u.GetForegroundWindow()!=h or not u.SetCursorPos(nav_x,nav_y):raise RuntimeError('Cannot select League of Legends in WeGame')
+        u.mouse_event(2,0,0,0,0);u.mouse_event(4,0,0,0,0);time.sleep(2)
+        if u.GetForegroundWindow()!=h:raise RuntimeError('Foreground changed after selecting League')
+        image=ImageGrab.grab()
         box=launch_button(image,(r.left,r.top,r.right,r.bottom))
         reference=Image.open(Path(__file__).with_name('wegame-launch-button.png'))
         actual=label_mask(image,box);expected=label_mask(reference,(0,0,reference.width,reference.height))
@@ -98,7 +128,6 @@ def click_launch(expected_pid):
             raise RuntimeError('WeGame button label changed; expected the observed Launch label')
         if u.GetForegroundWindow()!=h:raise RuntimeError('Foreground changed before launch')
         x=(box[0]+box[2])//2;y=(box[1]+box[3])//2
-        u.SetCursorPos.argtypes=[ctypes.c_int,ctypes.c_int]
         if not u.SetCursorPos(x,y):raise RuntimeError('WeGame input requires the same administrator level as WeGame')
         point=w.POINT();u.GetCursorPos(ctypes.byref(point))
         if (point.x,point.y)!=(x,y):raise RuntimeError('Cursor moved before launch')
