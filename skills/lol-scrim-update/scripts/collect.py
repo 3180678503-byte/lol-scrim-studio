@@ -19,29 +19,34 @@ def read(client, url, auth):
     except (OSError, ValueError):
         raise RuntimeError('Connection or JSON error') from None
 
-def credentials():
+def connection_credentials(lockfile=None):
     # A configured installation lockfile can be read without elevating the task.
-    configured = os.environ.get('LEAGUE_LOCKFILE_PATH')
+    configured = lockfile or os.environ.get('LEAGUE_LOCKFILE_PATH')
     if configured and Path(configured).is_file():
         parts = Path(configured).read_text(encoding='utf-8').split(':')
-        if len(parts) >= 5 and parts[2].isdigit():
-            return parts[2], parts[3]
-    command = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe' OR Name='LeagueClient.exe'\" | Select-Object CommandLine,ExecutablePath | ConvertTo-Json -Compress"
+        if len(parts) >= 5 and parts[1].isdigit() and parts[2].isdigit():
+            return int(parts[1]),parts[2],parts[3]
+    command = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe' OR Name='LeagueClient.exe'\" | Select-Object ProcessId,ParentProcessId,CommandLine,ExecutablePath | ConvertTo-Json -Compress"
     raw = subprocess.run(['powershell', '-NoProfile', '-Command', command], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True).stdout.lstrip('\ufeff').strip()
     ps = json.loads(raw) if raw else []
     for p in (ps if isinstance(ps, list) else [ps]):
         line = p.get('CommandLine') or ''
         port, token = re.search(r'--app-port=(\d+)', line), re.search(r'--remoting-auth-token=([^\s"]+)', line)
         if port and token:
-            return port[1], token[1]
+            pid=p['ParentProcessId'] if Path(p.get('ExecutablePath') or '').name.lower()=='leagueclientux.exe' else p['ProcessId']
+            return pid,port[1],token[1]
         exe = p.get('ExecutablePath')
         if exe:
             for path in [Path(exe).parent / 'lockfile', Path(exe).parent.parent / 'lockfile']:
                 if path.exists():
                     parts = path.read_text().split(':')
-                    if len(parts) >= 5 and parts[2].isdigit():
-                        return parts[2], parts[3]
-    raise RuntimeError('No logged-in League client found')
+                    if len(parts) >= 5 and parts[1].isdigit() and parts[2].isdigit():
+                        return int(parts[1]),parts[2],parts[3]
+    raise RuntimeError('No accessible logged-in League client; match the administrator level of WeGame')
+
+def credentials():
+    _,port,token=connection_credentials()
+    return port,token
 
 def strip_secrets(v):
     denied = {'token', 'jwt', 'mucjwtdto', 'accesstoken', 'refreshtoken', 'idtoken', 'authorization', 'password', 'roompassword'}
