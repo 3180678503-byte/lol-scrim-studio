@@ -47,7 +47,12 @@ class WindowsBackend:
                 subprocess.run(['powershell.exe','-NoProfile','-Command',command],env=env,capture_output=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
                 time.sleep(2)
             # Run desktop APIs in a fresh process to attach to the active desktop.
-            result=subprocess.run([sys.executable,str(Path(__file__).with_name('wegame_ui.py')),'--wegame-pid',str(wegame[0]['pid'])],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
+            allowed={wegame[0]['pid']}
+            while True:
+                children={p['pid'] for p in rows.values() if p['parent'] in allowed}
+                if children<=allowed:break
+                allowed|=children
+            result=subprocess.run([sys.executable,str(Path(__file__).with_name('wegame_ui.py')),'--wegame-pid',str(wegame[0]['pid']),'--allowed-child-pids',','.join(map(str,sorted(allowed)))],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
             if not result.returncode:return json.loads(result.stdout)
             last=result.stdout.strip() or result.stderr.strip() or 'WeGame launch control unavailable'
             if 'locked' in last or 'administrator level' in last:break

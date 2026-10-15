@@ -52,7 +52,7 @@ def label_mask(image,box):
     crop=image.crop((left+width*.49,top+height*.20,left+width*.71,top+height*.82))
     return list(crop.convert('L').resize((64,40),Image.Resampling.BILINEAR).point(lambda p:0 if p<110 else 255).getdata())
 
-def click_launch(expected_pid):
+def click_launch(expected_pid,allowed_children=()):
     u=ctypes.WinDLL('user32',use_last_error=True);k=ctypes.WinDLL('kernel32')
     u.SetProcessDPIAware()
     callback_type=ctypes.WINFUNCTYPE(w.BOOL,w.HWND,w.LPARAM)
@@ -66,7 +66,7 @@ def click_launch(expected_pid):
     u.OpenInputDesktop.argtypes=[w.DWORD,w.BOOL,w.DWORD];u.OpenInputDesktop.restype=w.HANDLE
     u.SetThreadDesktop.argtypes=[w.HANDLE];u.CloseDesktop.argtypes=[w.HANDLE]
     u.GetUserObjectInformationW.argtypes=[w.HANDLE,ctypes.c_int,ctypes.c_void_p,w.DWORD,ctypes.POINTER(w.DWORD)]
-    desktop=u.OpenInputDesktop(0,False,0x43);name=ctypes.create_unicode_buffer(128);size=w.DWORD()
+    desktop=u.OpenInputDesktop(0,False,0xC3);name=ctypes.create_unicode_buffer(128);size=w.DWORD()
     if not desktop or not u.GetUserObjectInformationW(desktop,2,name,ctypes.sizeof(name),ctypes.byref(size)):
         raise RuntimeError('Interactive desktop unavailable; leave Windows signed in and unlocked')
     if name.value=='Screen-saver':
@@ -86,7 +86,7 @@ def click_launch(expected_pid):
                     k.CloseHandle(process)
                 return True
             u.EnumWindows(dismiss,0);time.sleep(2)
-            new_desktop=u.OpenInputDesktop(0,False,0x43)
+            new_desktop=u.OpenInputDesktop(0,False,0xC3)
             if new_desktop:
                 u.SetThreadDesktop(new_desktop);u.CloseDesktop(desktop);desktop=new_desktop
                 u.GetUserObjectInformationW(desktop,2,name,ctypes.sizeof(name),ctypes.byref(size))
@@ -94,13 +94,14 @@ def click_launch(expected_pid):
         u.CloseDesktop(desktop)
         raise RuntimeError('Windows desktop is locked or showing a screen saver; unlock before WeGame launch')
     if not u.SetThreadDesktop(desktop):raise RuntimeError('Cannot attach to interactive desktop')
-    choices=[]
+    choices=[];allowed_pids={expected_pid,*allowed_children}
+    u.IsWindowVisible.argtypes=[w.HWND];u.IsWindowVisible.restype=w.BOOL
     @callback_type
     def enum(h,_):
         text=ctypes.create_unicode_buffer(128);u.GetWindowTextW(h,text,128)
         pid=w.DWORD();u.GetWindowThreadProcessId(h,ctypes.byref(pid))
         r=w.RECT();u.GetWindowRect(h,ctypes.byref(r))
-        if pid.value==expected_pid and text.value=='WeGame' and r.right-r.left>900 and r.bottom-r.top>500:choices.append((h,r))
+        if pid.value in allowed_pids and text.value.lower()=='wegame' and u.IsWindowVisible(h) and r.right-r.left>900 and r.bottom-r.top>500:choices.append((h,r))
         return True
     try:
         u.EnumWindows(enum,0)
@@ -138,6 +139,6 @@ def click_launch(expected_pid):
 
 if __name__=='__main__':
     import argparse
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--wegame-pid',required=True,type=int);args=p.parse_args()
-    try:print(json.dumps(click_launch(args.wegame_pid)))
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--wegame-pid',required=True,type=int);p.add_argument('--allowed-child-pids',default='');args=p.parse_args()
+    try:print(json.dumps(click_launch(args.wegame_pid,[int(pid) for pid in args.allowed_child_pids.split(',') if pid])))
     except (RuntimeError,OSError) as e:raise SystemExit(str(e))
