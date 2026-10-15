@@ -1,1 +1,1 @@
-{"name":"lol-scrim-community","private":true,"devDependencies":{"wrangler":"4.151.0"},"scripts":{"dev":"wrangler dev --local","deploy":"wrangler deploy --config wrangler.deploy.jsonc"}}
+{"name":"lol-scrim-community","private":true,"devDependencies":{"wrangler":"4.151.0"},"scripts":{"dev":"wrangler dev --local","deploy":"wrangler deploy --config wrangler.deploy.jsonc","moments:dev":"wrangler dev --local --config moments.wrangler.jsonc","moments:deploy":"wrangler deploy --config moments.deploy.jsonc"}}

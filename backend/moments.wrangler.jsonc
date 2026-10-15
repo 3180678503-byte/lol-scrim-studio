@@ -1,0 +1,7 @@
+{
+ "name":"lol-scrim-moments", "main":"moments-worker.mjs", "compatibility_date":"2026-10-15", "workers_dev":true,
+ "vars":{"ALLOWED_ORIGINS":"https://3180678503-byte.github.io","MANIFEST_URL":"https://3180678503-byte.github.io/lol-scrim-studio/backend/manifest.json"},
+ "d1_databases":[{"binding":"DB","database_name":"lol-scrim-community","database_id":"00000000-0000-0000-0000-000000000000"}],
+ "r2_buckets":[{"binding":"MEDIA","bucket_name":"lol-scrim-moments"}],
+ "triggers":{"crons":["17 * * * *"]}
+}

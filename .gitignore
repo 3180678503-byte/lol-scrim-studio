@@ -16,5 +16,6 @@ lol_client_probe.json
 
 .wrangler/
 backend/wrangler.deploy.jsonc
+backend/moments.deploy.jsonc
 .dev.vars*
 node_modules/
