@@ -84,7 +84,7 @@ def main():
             token_result=subprocess.run([args.gh,'auth','token','--hostname','github.com'],capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             if token_result.returncode:raise RuntimeError('GitHub CLI authorization unavailable')
             token=token_result.stdout.strip();header='AUTHORIZATION: basic '+base64.b64encode(('x-access-token:'+token).encode()).decode()
-            secret_values=[token,header];auth_env.update(SCRIM_DAILY_AUTH_HEADER=header,GIT_TERMINAL_PROMPT='0')
+            secret_values=[token,header];auth_env.update(SCRIM_DAILY_AUTH_HEADER=header,GIT_TERMINAL_PROMPT='0',GH_TOKEN=token)
             def git_network(*arguments):return git('-c','credential.helper=','--config-env=http.'+remote+'.extraHeader=SCRIM_DAILY_AUTH_HEADER',*arguments)
             if git('branch','--show-current')!='main':raise RuntimeError('Daily publishing requires the main branch')
             git_network('pull','--ff-only','origin','main')
