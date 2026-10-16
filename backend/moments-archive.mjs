@@ -1,6 +1,7 @@
 import {ApiError,hash,equals} from './moments-core.mjs';
 
 export const ARCHIVE_CONSENT='bilibili-public-v1';
+export const OWNER_MIGRATION='owner-migration-v1';
 export const ALLOCATED_SIZE="CASE WHEN EXISTS(SELECT 1 FROM moment_archives a WHERE a.moment_id=moments.id AND a.source_deleted_at>0) THEN 0 ELSE size END";
 const stmt=(env,sql,...args)=>env.DB.prepare(sql).bind(...args);
 const first=(env,sql,...args)=>stmt(env,sql,...args).first();
@@ -15,12 +16,30 @@ export async function archiveFor(env,id){
 export async function enqueueArchive(env,id,now){
  await stmt(env,"INSERT INTO moment_archives(moment_id,state,consent_version,consent_at,updated_at) VALUES(?,'queued',?,?,?)",id,ARCHIVE_CONSENT,now,now).run();
 }
-export async function archiveRoute(request,env,url,jsonBody,now=Date.now()){
+async function withMetadata(env,m,catalog){
+ const players=(await stmt(env,'SELECT player_key FROM moment_players WHERE moment_id=? ORDER BY player_key',m.id).all()).results.map(p=>p.player_key);
+ const names=new Map((catalog?.members||[]).map(p=>[p.key,p.name]));
+ return {...m,players,playerNames:players.map(key=>names.get(key)||key.replace(/#\d+$/,''))};
+}
+export async function archiveRoute(request,env,url,jsonBody,now=Date.now(),catalog){
  if(!url.pathname.startsWith('/archive/'))return null;
  if(!env.ARCHIVE_KEY||!await equals(request.headers.get('X-Archive-Key'),env.ARCHIVE_KEY))throw new ApiError('需要转存服务凭证',403);
+ if(url.pathname==='/archive/enroll'&&request.method==='POST'){
+  if(!env.ADMIN_KEY||!await equals(request.headers.get('X-Admin-Key'),env.ADMIN_KEY))throw new ApiError('需要群主管理凭证',403);
+  const raw=await jsonBody(request);
+  if(raw.authorization!==OWNER_MIGRATION)throw new ApiError('需要群主明确授权搬运旧视频');
+  if(typeof raw.id!=='string'||!/^([a-f0-9-]{36})$/.test(raw.id))throw new ApiError('视频编号不正确');
+  const m=await first(env,"SELECT id FROM moments WHERE id=? AND status='ready'",raw.id);
+  if(!m)throw new ApiError('视频不存在或尚未上传完成',404);
+  const existing=await first(env,'SELECT state FROM moment_archives WHERE moment_id=?',m.id);
+  if(existing)return {ok:true,alreadyEnrolled:true,state:existing.state};
+  if(!env.MEDIA||!await env.MEDIA.head('videos/'+m.id+'.mp4'))throw new ApiError('原片不可用',409);
+  const result=await stmt(env,"INSERT OR IGNORE INTO moment_archives(moment_id,state,consent_version,consent_at,updated_at) SELECT id,'queued',?,?,? FROM moments WHERE id=? AND status='ready'",OWNER_MIGRATION,now,now,m.id).run();
+  return {ok:true,alreadyEnrolled:!changes(result)};
+ }
  if(url.pathname==='/archive/jobs'&&request.method==='GET'){
-  const rows=await stmt(env,"SELECT a.moment_id AS id,a.state,a.bvid,a.attempts,a.ready_at AS readyAt,a.source_deleted_at AS sourceDeletedAt,a.error_code AS errorCode,m.title,m.description,m.category,m.size,m.duration FROM moment_archives a JOIN moments m ON m.id=a.moment_id WHERE m.status='ready' AND (a.state!='ready' OR a.source_deleted_at=0) ORDER BY a.updated_at LIMIT 200").all();
-  return {items:rows.results};
+  const rows=await stmt(env,"SELECT a.moment_id AS id,a.state,a.bvid,a.attempts,a.ready_at AS readyAt,a.source_deleted_at AS sourceDeletedAt,a.error_code AS errorCode,m.title,m.description,m.category,m.hero,m.occurred_on AS occurredOn,m.match_key AS matchKey,m.size,m.duration FROM moment_archives a JOIN moments m ON m.id=a.moment_id WHERE m.status='ready' AND (a.state!='ready' OR a.source_deleted_at=0) ORDER BY a.updated_at LIMIT 200").all();
+  return {items:await Promise.all(rows.results.map(m=>withMetadata(env,m,catalog)))};
  }
  if(url.pathname==='/archive/claim'&&request.method==='POST'){
   const token=crypto.randomUUID()+crypto.randomUUID(),tokenHash=await hash(token);
@@ -30,8 +49,8 @@ export async function archiveRoute(request,env,url,jsonBody,now=Date.now()){
   if(!job)return {job:null};
   const r=await stmt(env,"UPDATE moment_archives SET state='processing',lease_hash=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE moment_id=? AND ((state IN ('queued','failed') AND retry_after<=?) OR (state='processing' AND lease_until<?))",tokenHash,now+leaseMs,now,job.moment_id,now,now).run();
   if(!changes(r))return {job:null};
-  const m=await first(env,'SELECT id,title,description,hero,category,size,duration FROM moments WHERE id=?',job.moment_id);
-  return {job:{...m,leaseToken:token,expiresAt:now+leaseMs}};
+  const m=await first(env,'SELECT id,title,description,hero,category,occurred_on AS occurredOn,match_key AS matchKey,size,duration FROM moments WHERE id=?',job.moment_id);
+  return {job:{...await withMetadata(env,m,catalog),leaseToken:token,expiresAt:now+leaseMs}};
  }
  const route=/^\/archive\/jobs\/([a-f0-9-]{36})\/(source|heartbeat|submitting|submitted|failed|verified|release)$/.exec(url.pathname);
  if(!route)throw new ApiError('没有这个转存接口',404);

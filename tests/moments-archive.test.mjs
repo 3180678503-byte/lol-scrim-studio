@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import Worker from '../backend/moments-worker.mjs';
 import {fixture} from './moments.test.mjs';
-import {archiveRoute,ARCHIVE_CONSENT} from '../backend/moments-archive.mjs';
+import {archiveRoute,ARCHIVE_CONSENT,OWNER_MIGRATION} from '../backend/moments-archive.mjs';
 import catalog from '../backend/manifest.json' with {type:'json'};
 
 const {sqlite,env,objects}=fixture();env.ARCHIVE_KEY='test-only-archive-key';
 const call=async(path,{method='GET',json,headers={},body}={})=>Worker.fetch(new Request('https://moments.test'+path,{method,headers:{Origin:env.ALLOWED_ORIGINS,...(json!==undefined?{'Content-Type':'application/json'}:{}),...headers},body:json!==undefined?JSON.stringify(json):body}),env);
 const member=catalog.members[0].key,session=await (await call('/session',{method:'POST',json:{playerKey:member,code:env.GROUP_CODE}})).json();
 const auth={Authorization:'Bearer '+session.token},key={'X-Archive-Key':env.ARCHIVE_KEY};
-const data={title:'B站自动转存验证',description:'这是群友的自制游戏片段',category:'highlight',players:[member],size:32,duration:1,mime:'video/mp4',archiveRequested:true,archiveConsent:ARCHIVE_CONSENT};
+const data={title:'B站自动转存验证',description:'这是群友的自制游戏片段',category:'highlight',players:[member],hero:'泽拉斯',occurredOn:'2026-10-15',size:32,duration:1,mime:'video/mp4',archiveRequested:true,archiveConsent:ARCHIVE_CONSENT};
 assert.equal((await call('/moments',{method:'POST',headers:auth,json:{...data,archiveConsent:null}})).status,400);
 const ticket=await (await call('/moments',{method:'POST',headers:auth,json:data})).json();
 assert.equal((await call('/archive/claim',{method:'POST',headers:key,json:{}})).status,200);
@@ -20,6 +20,7 @@ const claims=await Promise.all([call('/archive/claim',{method:'POST',headers:key
 assert.equal(jobs.filter(x=>x.job).length,1,'one atomic claim');
 const job=jobs.find(x=>x.job).job,base='/archive/jobs/'+job.id;
 const listed=await (await call('/archive/jobs',{headers:key})).json();assert.equal(listed.items[0].category,'highlight','queue retains website category for collection assignment');
+for(const item of [job,listed.items[0]]){assert.deepEqual(item.players,[member]);assert.deepEqual(item.playerNames,[catalog.members[0].name]);assert.equal(item.hero,'泽拉斯');assert.equal(item.occurredOn,'2026-10-15');}
 assert.equal((await call(base+'/source',{headers:key})).status,409);
 assert.equal((await call(base+'/source',{headers:{...key,'X-Archive-Lease':job.leaseToken}})).status,200);
 const mutation=(action,extra={})=>call(base+'/'+action,{method:'POST',headers:key,json:{leaseToken:job.leaseToken,...extra}});
@@ -46,4 +47,17 @@ await call('/moments/'+job.id+'/comments',{method:'POST',headers:auth,json:{body
 assert.equal((await (await call('/moments/'+job.id+'/comments')).json()).comments.length,1);
 assert.equal((await call('/moments/'+job.id,{method:'DELETE',headers:{'X-Owner-Token':ticket.ownerToken}})).status,200);
 assert.equal((await mutation('verified',verify)).status,404,'deleted clips cannot be resurrected');
-sqlite.close();console.log(JSON.stringify({explicitConsent:true,privateQueue:true,atomicClaim:true,noDuplicateSubmit:true,ownerVerification:true,retentionAndBackup:true,quotaReleased:true,idempotentRelease:true,commentsPreserved:true,deletedNotResurrected:true}));
+// Legacy enrollment records owner authorization separately from uploader consent.
+const legacy=await (await call('/moments',{method:'POST',headers:auth,json:{...data,archiveRequested:false}})).json();
+const enroll={id:legacy.id,authorization:OWNER_MIGRATION},admin={...key,'X-Admin-Key':env.ADMIN_KEY};
+assert.equal((await call('/archive/enroll',{method:'POST',headers:admin,json:enroll})).status,404,'unfinished clips cannot be enrolled');
+await call('/moments/'+legacy.id+'/upload',{method:'PUT',headers:{'X-Upload-Token':legacy.uploadToken,'Content-Length':'32','Content-Type':'video/mp4'},body:bytes});
+assert.equal((await call('/archive/enroll',{method:'POST',headers:key,json:enroll})).status,403,'the sync service alone cannot authorize legacy publication');
+assert.equal((await call('/archive/enroll',{method:'POST',headers:admin,json:{id:legacy.id}})).status,400);
+assert.equal((await call('/archive/enroll',{method:'POST',headers:admin,json:enroll})).status,200);
+assert.equal((await (await call('/archive/enroll',{method:'POST',headers:admin,json:enroll})).json()).alreadyEnrolled,true);
+assert.equal(sqlite.prepare('SELECT consent_version FROM moment_archives WHERE moment_id=?').get(legacy.id).consent_version,OWNER_MIGRATION);
+const original=sqlite.prepare('SELECT consent_version FROM moment_archives WHERE moment_id=?').get(job.id);assert.equal(original.consent_version,ARCHIVE_CONSENT);
+await call('/moments/'+legacy.id,{method:'DELETE',headers:{'X-Owner-Token':legacy.ownerToken}});
+assert.equal((await call('/archive/enroll',{method:'POST',headers:admin,json:enroll})).status,404,'enrollment cannot restore deleted clips');
+sqlite.close();console.log(JSON.stringify({explicitConsent:true,privateQueue:true,atomicClaim:true,noDuplicateSubmit:true,ownerVerification:true,retentionAndBackup:true,quotaReleased:true,idempotentRelease:true,commentsPreserved:true,deletedNotResurrected:true,submissionMetadata:true,ownerAuthorizedLegacyEnrollment:true}));

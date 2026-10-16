@@ -114,6 +114,69 @@ class Checks(unittest.TestCase):
         with self.assertRaises(u.JobError):
             self.runner()
 
+    def test_website_players_hero_and_category_become_tags(self):
+        job={**self.job,'category':'funny','hero':'芮尔','players':['ignored#12345'], 'playerNames':['qwer','煎饼狗子','Keifuu']}
+        metadata=u.upload_metadata(job)
+        self.assertEqual(metadata['tags'],['英雄联盟','下饭操作','芮尔','qwer','煎饼狗子','Keifuu','峡谷名场面'])
+        self.assertNotIn('ignored',metadata['description'])
+        self.assertIn('相关玩家：qwer、煎饼狗子、Keifuu',metadata['description'])
+        self.assertIn('英雄：芮尔',metadata['description'])
+
+    def test_silent_cli_result_recovers_owned_submission_without_reupload(self):
+        class Creator:
+            def find_marker(self,job_id,title):return BV
+        r=u.Runner(self.cfg,api=self.api,execute=lambda command:(0,''),creator=Creator())
+        r.submit_one(self.job)
+        self.assertEqual(u.read_json(r.record_path(ID))['bvid'],BV)
+        r.submit_one(self.job)
+        self.assertEqual(sum(p.endswith('/source') for p,_ in self.api.calls),1)
+
+    def test_uncertain_job_recovers_before_public_moderation(self):
+        class Creator:
+            def find_marker(self,job_id,title):return BV
+        r=u.Runner(self.cfg,api=self.api,inspect_video=lambda b:None,execute=lambda c:self.fail('must not reupload'),creator=Creator())
+        r.reconcile_and_verify([{**self.job,'state':'manual'}])
+        self.assertEqual(u.read_json(r.record_path(ID))['bvid'],BV)
+        self.assertTrue(any(p.endswith('/submitted') for p,_ in self.api.calls))
+        self.assertFalse(any(p.endswith('/verified') for p,_ in self.api.calls))
+
+    def test_creator_requires_exact_marker_title_and_unique_bvid(self):
+        creator=object.__new__(u.CreatorArchives)
+        title=u.upload_metadata(self.job)['title']
+        data={'arc_audits':[{'Archive':{'bvid':BV,'title':title,'desc':'名场面编号：'+ID}}]}
+        creator.request=lambda path:data
+        self.assertEqual(creator.find_marker(ID,title),BV)
+        self.assertIsNone(creator.find_marker(ID,title+'other'))
+        data['arc_audits'][0]['Archive']['desc']+='extra'
+        self.assertIsNone(creator.find_marker(ID,title))
+        data['arc_audits'][0]['Archive']['desc']='名场面编号：'+ID
+        data['arc_audits'].append({'Archive':{**data['arc_audits'][0]['Archive'],'bvid':'BV1B7411m7LV'}})
+        with self.assertRaises(u.CollectionError):creator.find_marker(ID,title)
+
+    def test_tag_limits_deduplication_and_complete_description(self):
+        names=['qwer','QWER','带,逗号\n的ID','很长的名字'*6]+['玩家'+str(i) for i in range(10)]
+        job={**self.job,'category':'highlight','hero':'泽拉斯/芮尔','playerNames':names,'description':'描述'*1000}
+        metadata=u.upload_metadata(job)
+        self.assertEqual(len(metadata['tags']),10)
+        self.assertTrue(all(0<len(t)<=20 and ',' not in t and '\n' not in t for t in metadata['tags']))
+        self.assertEqual(sum(t.casefold()=='qwer' for t in metadata['tags']),1)
+        self.assertIn('玩家9',metadata['description'])
+        self.assertIn('名场面编号：'+ID,metadata['description'])
+        self.assertLessEqual(len(metadata['description']),1900)
+
+    def test_missing_optional_metadata_is_not_invented(self):
+        metadata=u.upload_metadata({**self.job,'players':['G30a#71755']})
+        self.assertIn('G30a',metadata['tags'])
+        self.assertNotIn('英雄：',metadata['description'])
+        self.assertNotIn('#71755',metadata['description'])
+
+    def test_owner_can_correct_game_for_non_league_clip(self):
+        config={'metadataOverrides':{ID:{'game':'无畏契约'}}}
+        metadata=u.upload_metadata(self.job,config)
+        self.assertEqual(metadata['tags'][0],'无畏契约')
+        self.assertNotIn('英雄联盟',metadata['tags'])
+        self.assertNotIn('英雄联盟',metadata['description'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -44,7 +44,7 @@ export default {
   const url=new URL(request.url),now=Date.now();
   try{
    const catalog=await catalogFor(env),storageReady=!!(env.MEDIA&&env.GROUP_CODE&&env.SESSION_SECRET);
-   const archiveResult=await archiveRoute(request,env,url,jsonBody,now);if(archiveResult!==null)return archiveResult instanceof Response?archiveResult:respond(archiveResult);
+   const archiveResult=await archiveRoute(request,env,url,jsonBody,now,catalog);if(archiveResult!==null)return archiveResult instanceof Response?archiveResult:respond(archiveResult);
    if(request.method==='GET'&&url.pathname==='/health')return respond({ok:true,storageReady,archiveEnabled:!!env.ARCHIVE_KEY,limits:LIMITS});
    if(request.method==='GET'&&url.pathname==='/catalog')return respond({storageReady,archiveEnabled:!!env.ARCHIVE_KEY,limits:LIMITS,categories:CATEGORIES,members:catalog.members,matches:catalog.matchMeta||{}});
    if(request.method==='GET'&&url.pathname==='/usage')return respond(await usage(env));

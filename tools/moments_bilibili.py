@@ -130,6 +130,29 @@ class Collections:
         return 'added'
 
 
+class CreatorArchives(Collections):
+    """Read only this logged-in account's recent submissions, including review."""
+    allowed_prefixes = ('/x/web/archives?',)
+
+    def find_marker(self, job_id, title):
+        if not ID_RE.fullmatch(job_id):
+            raise CollectionError('invalid_job_id')
+        matches = set()
+        for pn in range(1, 4):
+            data = self.request('/x/web/archives?' + urllib.parse.urlencode({'status': 'is_pubing,pubed,not_pubed', 'pn': pn, 'ps': 30})) or {}
+            rows = data.get('arc_audits') or data.get('archives') or []
+            for row in rows:
+                archive = row.get('Archive') or row.get('archive') or row
+                bvid = archive.get('bvid')
+                if archive.get('title') == title and '名场面编号：' + job_id in (archive.get('desc') or '').splitlines() and isinstance(bvid, str) and BV_RE.fullmatch(bvid):
+                    matches.add(bvid)
+            if len(rows) < 30:
+                break
+        if len(matches) > 1:
+            raise CollectionError('multiple_submissions_with_same_marker')
+        return next(iter(matches), None)
+
+
 class Series(Collections):
     """Bilibili space video lists (called series in the current official UI)."""
     host = 'https://api.bilibili.com'
@@ -378,15 +401,47 @@ def check_login(path, mid):
         raise JobError('login_expired_rescan_required')
 
 
-def upload_command(config, job, source):
+def upload_metadata(job, config=None):
+    """Use public website names only; keep complete metadata in the description."""
+    names = job.get('playerNames') or [re.sub(r'#\d+$', '', p) for p in job.get('players', [])]
+    names = list(dict.fromkeys(str(p).strip() for p in names if str(p).strip()))
+    label = VIDEO_LABELS.get(job.get('category'), '峡谷名场面')
+    game = ((config or {}).get('metadataOverrides', {}).get(job['id'], {}).get('game') or job.get('game') or '英雄联盟').strip()
+    hero = (job.get('hero') or '').strip()
+    heroes = [s.strip() for s in re.split(r'[,，、/;；\n]+', hero) if s.strip()]
+    tags, seen = [], set()
+    # Bilibili accepts comma-delimited tags. Cap our output at ten 20-character
+    # tags, and retain all players in the description if the tag budget is full.
+    for value in [game, label, *heroes, *names, '峡谷名场面']:
+        tag = re.sub(r'[,，\x00-\x1f\x7f]', ' ', value)
+        tag = re.sub(r'\s+', ' ', tag).strip()[:20].strip()
+        if tag and tag.casefold() not in seen:
+            tags.append(tag)
+            seen.add(tag.casefold())
+        if len(tags) == 10:
+            break
+    details = ['分类：' + label]
+    if names:
+        details.append('相关玩家：' + '、'.join(names))
+    if hero:
+        details.append('英雄：' + hero)
+    if job.get('occurredOn'):
+        details.append('对局日期：' + job['occurredOn'])
+    if job.get('matchKey'):
+        details.append('比赛：' + job['matchKey'])
     marker = '名场面编号：' + job['id']
-    description = (job.get('description') or '').strip() + '\n\n' + marker + '\n群友授权发布的英雄联盟游戏片段。'
+    suffix = '\n'.join(details + [marker, '峡谷名场面：https://3180678503-byte.github.io/lol-scrim-studio/moments/', '由群主统一发布的群友游戏片段。'])
+    original = (job.get('description') or '').strip()[:max(0, 1900 - len(suffix) - 2)]
+    return {'title': ('【' + label + '】' + job['title'])[:80], 'description': (original + '\n\n' + suffix).strip(), 'tags': tags}
+
+
+def upload_command(config, job, source):
+    metadata = upload_metadata(job, config)
     command = [config['biliupPath'], '-u', config['cookiePath']]
     if config.get('bilibiliProxy'):
         command += ['-p', config['bilibiliProxy']]
     # The command runs without a shell; a friend's title cannot become code.
-    label = VIDEO_LABELS.get(job.get('category'), '峡谷名场面')
-    command += ['upload', '--submit', 'web', '--title', ('【' + label + '】' + job['title'])[:80], '--desc', description[:1900], '--tag', '英雄联盟,游戏集锦,峡谷名场面', '--copyright', '1', '--tid', '171', '--no-reprint', '1', '--limit', '2', str(source)]
+    command += ['upload', '--submit', 'web', '--title', metadata['title'], '--desc', metadata['description'], '--tag', ','.join(metadata['tags']), '--copyright', '1', '--tid', '171', '--no-reprint', '1', '--limit', '2', str(source)]
     return command
 
 
@@ -415,7 +470,7 @@ def single_instance(root):
 
 
 class Runner:
-    def __init__(self, config, api=None, inspect_video=public_video, execute=None, collections=None):
+    def __init__(self, config, api=None, inspect_video=public_video, execute=None, collections=None, creator=None):
         self.config = config
         self.root = pathlib.Path(config['privateRoot']).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -425,6 +480,7 @@ class Runner:
         self.mid = credential_mid(config['cookiePath'])
         self.collections = collections or (CategoryLists(config['cookiePath']) if config.get('categoryCollections') else None)
         self.events = []
+        self.creator = creator
 
     def note(self, event, **values):
         self.events.append({'event': event, **values})
@@ -480,8 +536,15 @@ class Runner:
             bvid = job.get('bvid') or receipt.get('bvid')
             if not bvid:
                 if job['state'] in ('submitting', 'manual'):
-                    self.note('needs_manual_reconciliation', id=job_id)
-                continue
+                    bvid = self.lookup_submission(job)
+                    if bvid:
+                        receipt.update(phase='submitted', bvid=bvid, ownerMid=self.mid)
+                        save_json(self.record_path(job_id), receipt)
+                        self.note('recovered_from_creator', id=job_id, bvid=bvid)
+                    else:
+                        self.note('needs_manual_reconciliation', id=job_id)
+                if not bvid:
+                    continue
             if job['state'] in ('submitting', 'manual'):
                 self.api.request('/archive/jobs/' + job_id + '/submitted', {'bvid': bvid, 'ownerMid': self.mid})
             if job['state'] not in ('submitting', 'manual', 'submitted', 'ready'):
@@ -512,6 +575,15 @@ class Runner:
                 self.api.request('/archive/jobs/' + job_id + '/release', {'localBackupSha256': receipt['sha256']})
                 self.note('r2_source_released_local_backup_kept', id=job_id)
 
+    def lookup_submission(self, job):
+        try:
+            if self.creator is None:
+                self.creator = CreatorArchives(self.config['cookiePath'])
+            return self.creator.find_marker(job['id'], upload_metadata(job, self.config)['title'])
+        except CollectionError as error:
+            self.note('creator_lookup_will_retry', id=job['id'], reason=str(error))
+            return None
+
     def submit_one(self, job):
         job_id, token = job['id'], job['leaseToken']
         base = '/archive/jobs/' + job_id
@@ -528,7 +600,7 @@ class Runner:
             with source.open('rb') as stream:
                 if stream.read(8)[4:8] != b'ftyp':
                     raise JobError('download_not_mp4')
-            record = {'id': job_id, 'sha256': digest(source), 'phase': 'downloaded', 'ownerMid': self.mid, 'category': job.get('category')}
+            record = {'id': job_id, 'sha256': digest(source), 'phase': 'downloaded', 'ownerMid': self.mid, 'category': job.get('category'), 'metadata': upload_metadata(job, self.config)}
             save_json(self.record_path(job_id), record)
             self.api.request(base + '/submitting', {'leaseToken': token})
             record.update(phase='submitting', startedAt=int(time.time() * 1000))
@@ -536,9 +608,10 @@ class Runner:
             submitted = True
             code, output = self.execute(upload_command(self.config, job, source))
             candidates = set(BV_RE.findall(output))
-            if code != 0 or len(candidates) != 1:
+            bvid = candidates.pop() if code == 0 and len(candidates) == 1 else self.lookup_submission(job)
+            record['cliExitCode'] = code
+            if not bvid:
                 raise JobError('submission_outcome_uncertain')
-            bvid = candidates.pop()
             record.update(phase='submitted', bvid=bvid)
             save_json(self.record_path(job_id), record)
             self.api.request(base + '/submitted', {'bvid': bvid, 'ownerMid': self.mid})
