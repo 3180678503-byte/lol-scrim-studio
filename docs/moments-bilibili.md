@@ -57,12 +57,42 @@ python tools/moments_bilibili.py --config C:/private-moments/config.json --attac
 
 `last-run.json` 保存状态摘要，`receipts/` 保存原片散列和 BV 号。第三方工具的原始输出可能带登录信息，因此只在内存解析，不保存或公开。账号 Cookie、私有配置和密钥不进 GitHub。
 
+## 按网站分类加入 B站合集
+
+支持四个独立的 B站**投稿合集**：
+
+| 网站分类 | B站合集名 |
+| --- | --- |
+| 神操作 | 名场面 |
+| 下饭操作 | 下饭操作 |
+| 默契配合 | 默契配合 |
+| 整活现场 | 整活现场 |
+
+合集需要账号拥有相应 B站权益。先查询官方预检的 `season` 开关：
+
+```powershell
+python tools/moments_bilibili.py --config C:/private-moments/config.json --collections
+```
+
+`canCreateCollections: false` 表示当前账号尚未开通投稿合集。此时普通视频投稿和网站分类继续工作；程序不会反复尝试创建合集。B站空间里的「视频列表」属于另一种功能，不会将其当作投稿合集。
+
+账号开通权益后，一次性创建/绑定四个合集：
+
+```powershell
+python tools/moments_bilibili.py --config C:/private-moments/config.json --setup-collections
+```
+
+四张封面使用仓库 `assets/collection-covers/`，也可用 `--collection-covers <目录>` 指定。命令先检查权限，再复用同名合集或新建；逐个保存合集和默认小节的 ID 到私有配置 `categoryCollections`。同名合集不唯一时暂停，避免误绑定。创建操作只有显式执行该命令时发生。
+
+初始化成功后，原有自动任务在稿件审核通过后，按网站分类加入对应合集，再读取小节确认加入成功。本机收据保存归类结果，重复执行不重复添加。核对不通过或网络失败时保留待重试；不会因此重新投稿，同步归类成功后才继续释放到期 R2 原片。归类依据是上传时的网站分类，与玩家标签、比赛选填项独立。
+
 ## 测试与回退
 
 ```powershell
 node tests/moments.test.mjs
 node tests/moments-archive.test.mjs
 python tests/moments_bilibili_test.py
+python tests/bilibili_collections_test.py
 node tests/community.test.mjs
 ```
 

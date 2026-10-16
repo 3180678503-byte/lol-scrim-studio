@@ -19,6 +19,7 @@ assert.equal((await call('/archive/jobs')).status,403);
 const claims=await Promise.all([call('/archive/claim',{method:'POST',headers:key,json:{}}),call('/archive/claim',{method:'POST',headers:key,json:{}})]),jobs=await Promise.all(claims.map(r=>r.json()));
 assert.equal(jobs.filter(x=>x.job).length,1,'one atomic claim');
 const job=jobs.find(x=>x.job).job,base='/archive/jobs/'+job.id;
+const listed=await (await call('/archive/jobs',{headers:key})).json();assert.equal(listed.items[0].category,'highlight','queue retains website category for collection assignment');
 assert.equal((await call(base+'/source',{headers:key})).status,409);
 assert.equal((await call(base+'/source',{headers:{...key,'X-Archive-Lease':job.leaseToken}})).status,200);
 const mutation=(action,extra={})=>call(base+'/'+action,{method:'POST',headers:key,json:{leaseToken:job.leaseToken,...extra}});

@@ -69,6 +69,32 @@ class Checks(unittest.TestCase):
     def test_wrong_account_or_waiting_moderation(self):
         self.assertIsNone(u.verified_fields({'bvid': BV, 'state': 0, 'owner': {'mid': 999}, 'cid': 1}, BV, 123))
         self.assertIsNone(u.verified_fields({'bvid': BV, 'state': -4, 'owner': {'mid': 123}, 'cid': 1}, BV, 123))
+    def test_category_collection_added_once_without_resubmission(self):
+        class Collection:
+            calls=0
+            def ensure_video(self,binding,video,mid):
+                self.calls+=1
+                self.asserted=(binding['seasonId'],video['aid'],mid)
+        collection=Collection()
+        self.cfg['categoryCollections']={'funny':{'seasonId':10,'sectionId':20,'ownerMid':123,'title':'下饭操作'}}
+        r=u.Runner(self.cfg,api=self.api,collections=collection)
+        job={'id':ID,'category':'funny'}
+        video={'bvid':BV,'aid':30}
+        self.assertTrue(r.ensure_collection(job,video))
+        self.assertTrue(r.ensure_collection(job,video))
+        self.assertEqual(collection.calls,1)
+        self.assertEqual(collection.asserted,(10,30,123))
+    def test_collection_failure_keeps_original_for_retry(self):
+        class Broken:
+            def ensure_video(self,*args):raise u.CollectionError('bilibili_collection_rejected_1')
+        self.cfg['categoryCollections']={'highlight':{'seasonId':10,'sectionId':20,'ownerMid':123,'title':'名场面'}}
+        r=u.Runner(self.cfg,api=self.api,collections=Broken())
+        r.inspect=lambda b:{'bvid':BV,'aid':30,'state':0,'owner':{'mid':123},'cid':9,'desc':'名场面编号：'+ID}
+        job={'id':ID,'category':'highlight','state':'ready','bvid':BV,'readyAt':int(time.time()*1000)-8*86400000}
+        r.reconcile_and_verify([job])
+        self.assertTrue(any(e['event']=='collection_will_retry' for e in r.events))
+        self.assertFalse(any(p.endswith('/release') for p,_ in self.api.calls))
+        self.assertFalse(u.read_json(r.record_path(ID),{}).get('collection'))
     def test_inputs_stay_arguments(self):
         command = u.upload_command(self.cfg, self.job, self.root / 'one.mp4')
         self.assertIn('【峡谷名场面】' + self.job['title'], command)

@@ -19,7 +19,7 @@ export async function archiveRoute(request,env,url,jsonBody,now=Date.now()){
  if(!url.pathname.startsWith('/archive/'))return null;
  if(!env.ARCHIVE_KEY||!await equals(request.headers.get('X-Archive-Key'),env.ARCHIVE_KEY))throw new ApiError('需要转存服务凭证',403);
  if(url.pathname==='/archive/jobs'&&request.method==='GET'){
-  const rows=await stmt(env,"SELECT a.moment_id AS id,a.state,a.bvid,a.attempts,a.ready_at AS readyAt,a.source_deleted_at AS sourceDeletedAt,a.error_code AS errorCode,m.title,m.description,m.size,m.duration FROM moment_archives a JOIN moments m ON m.id=a.moment_id WHERE m.status='ready' AND (a.state!='ready' OR a.source_deleted_at=0) ORDER BY a.updated_at LIMIT 200").all();
+  const rows=await stmt(env,"SELECT a.moment_id AS id,a.state,a.bvid,a.attempts,a.ready_at AS readyAt,a.source_deleted_at AS sourceDeletedAt,a.error_code AS errorCode,m.title,m.description,m.category,m.size,m.duration FROM moment_archives a JOIN moments m ON m.id=a.moment_id WHERE m.status='ready' AND (a.state!='ready' OR a.source_deleted_at=0) ORDER BY a.updated_at LIMIT 200").all();
   return {items:rows.results};
  }
  if(url.pathname==='/archive/claim'&&request.method==='POST'){

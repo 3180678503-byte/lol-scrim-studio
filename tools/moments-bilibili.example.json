@@ -6,5 +6,6 @@
   "privateRoot": "C:/private-moments",
   "retainDays": 7,
   "maxPerRun": 2,
-  "maxPerDay": 20
+  "maxPerDay": 20,
+  "categoryCollections": {}
 }
