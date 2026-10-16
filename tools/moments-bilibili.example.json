@@ -1,0 +1,10 @@
+{
+  "workerUrl": "https://YOUR-MOMENTS-WORKER.workers.dev",
+  "archiveKey": "SET-A-PRIVATE-RANDOM-KEY",
+  "biliupPath": "C:/private-tools/biliup.exe",
+  "cookiePath": "C:/private-moments/cookies.json",
+  "privateRoot": "C:/private-moments",
+  "retainDays": 7,
+  "maxPerRun": 2,
+  "maxPerDay": 20
+}

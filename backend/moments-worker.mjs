@@ -1,5 +1,6 @@
 import manifest from './manifest.json' with {type:'json'};
 import {LIMITS,CATEGORIES,ApiError,validateMoment,parseRange,hash,equals,signSession,readSession,dayStart} from './moments-core.mjs';
+import {ARCHIVE_CONSENT,ALLOCATED_SIZE,archiveFor,enqueueArchive,archiveRoute} from './moments-archive.mjs';
 let catalogCache=null,catalogUntil=0;
 async function catalogFor(env){
  if(!env.MANIFEST_URL)return manifest;
@@ -13,7 +14,7 @@ const run=(env,sql,...args)=>statement(env,sql,...args).run();
 const changes=result=>Number(result?.meta?.changes??result?.changes??0);
 // Expired reservations keep their allocation until cleanup has removed the files.
 const activeWhere="status IN ('ready','pending','uploading')";
-async function usage(env){const row=await get(env,`SELECT COALESCE(SUM(size+?),0) AS bytes,COUNT(*) AS count,SUM(CASE WHEN status='ready' THEN 1 ELSE 0 END) AS published FROM moments WHERE ${activeWhere}`,LIMITS.posterBytes);return {allocatedBytes:row.bytes,published:row.published||0,totalBytes:LIMITS.totalBytes};}
+async function usage(env){const row=await get(env,`SELECT COALESCE(SUM((${ALLOCATED_SIZE})+?),0) AS bytes,COUNT(*) AS count,SUM(CASE WHEN status='ready' THEN 1 ELSE 0 END) AS published FROM moments WHERE ${activeWhere}`,LIMITS.posterBytes);return {allocatedBytes:row.bytes,published:row.published||0,totalBytes:LIMITS.totalBytes};}
 async function jsonBody(request,max=16000){
  if(!request.headers.get('content-type')?.startsWith('application/json'))throw new ApiError('需要 JSON 请求',415);
  if(Number(request.headers.get('content-length'))>max)throw new ApiError('提交内容过长',413);
@@ -27,7 +28,7 @@ async function findMoment(env,id,ready=false){const m=await get(env,'SELECT * FR
 async function owned(request,env,m){if(env.ADMIN_KEY&&await equals(request.headers.get('X-Admin-Key'),env.ADMIN_KEY))return true;const token=request.headers.get('X-Owner-Token');if(!token||!await equals(await hash(token),m.owner_hash))throw new ApiError('需要本视频的管理凭证，或管理员口令',403);return true;}
 async function publicMoment(env,m){
  const [players,likes,comments]=await env.DB.batch([statement(env,'SELECT player_key FROM moment_players WHERE moment_id=?',m.id),statement(env,'SELECT player_key FROM moment_likes WHERE moment_id=?',m.id),statement(env,'SELECT COUNT(*) AS n FROM moment_comments WHERE moment_id=?',m.id)]);
- return {id:m.id,uploaderKey:m.uploader_key,title:m.title,description:m.description,category:m.category,players:players.results.map(x=>x.player_key),matchKey:m.match_key,occurredOn:m.occurred_on,hero:m.hero,size:m.size,duration:m.duration,createdAt:m.created_at,hasPoster:m.poster_size>0,likes:likes.results.map(x=>x.player_key),commentCount:comments.results[0].n};
+ return {id:m.id,uploaderKey:m.uploader_key,title:m.title,description:m.description,category:m.category,players:players.results.map(x=>x.player_key),matchKey:m.match_key,occurredOn:m.occurred_on,hero:m.hero,size:m.size,duration:m.duration,createdAt:m.created_at,hasPoster:m.poster_size>0,likes:likes.results.map(x=>x.player_key),commentCount:comments.results[0].n,archive:await archiveFor(env,m.id)};
 }
 async function cleanup(env,now=Date.now()){
  const expired=await statement(env,"SELECT id FROM moments WHERE status IN ('pending','uploading') AND expires_at<=? LIMIT 100",now).all();
@@ -43,8 +44,9 @@ export default {
   const url=new URL(request.url),now=Date.now();
   try{
    const catalog=await catalogFor(env),storageReady=!!(env.MEDIA&&env.GROUP_CODE&&env.SESSION_SECRET);
-   if(request.method==='GET'&&url.pathname==='/health')return respond({ok:true,storageReady,limits:LIMITS});
-   if(request.method==='GET'&&url.pathname==='/catalog')return respond({storageReady,limits:LIMITS,categories:CATEGORIES,members:catalog.members,matches:catalog.matchMeta||{}});
+   const archiveResult=await archiveRoute(request,env,url,jsonBody,now);if(archiveResult!==null)return archiveResult instanceof Response?archiveResult:respond(archiveResult);
+   if(request.method==='GET'&&url.pathname==='/health')return respond({ok:true,storageReady,archiveEnabled:!!env.ARCHIVE_KEY,limits:LIMITS});
+   if(request.method==='GET'&&url.pathname==='/catalog')return respond({storageReady,archiveEnabled:!!env.ARCHIVE_KEY,limits:LIMITS,categories:CATEGORIES,members:catalog.members,matches:catalog.matchMeta||{}});
    if(request.method==='GET'&&url.pathname==='/usage')return respond(await usage(env));
    if(request.method==='POST'&&url.pathname==='/session'){
     if(!env.GROUP_CODE||!env.SESSION_SECRET)throw new ApiError('上传空间正在准备，请稍后再试',503);
@@ -65,12 +67,14 @@ export default {
    }
    if(request.method==='POST'&&url.pathname==='/moments'){
     if(!storageReady)throw new ApiError('视频空间暂未开通，暂不能上传',503);
-    const session=await authenticate(request,env,catalog),raw=validateMoment(await jsonBody(request),catalog),id=crypto.randomUUID(),uploadToken=crypto.randomUUID()+crypto.randomUUID(),ownerToken=crypto.randomUUID()+crypto.randomUUID();
+    const session=await authenticate(request,env,catalog),body=await jsonBody(request),raw=validateMoment(body,catalog),id=crypto.randomUUID(),uploadToken=crypto.randomUUID()+crypto.randomUUID(),ownerToken=crypto.randomUUID()+crypto.randomUUID();
+    if(body.archiveRequested&&(!env.ARCHIVE_KEY||body.archiveConsent!==ARCHIVE_CONSENT))throw new ApiError('请确认允许以群主 B站账号公开发布',400);
     const columns=['id','uploader_key','title','description','category','match_key','occurred_on','hero','size','duration','mime','status','upload_hash','owner_hash','created_at','expires_at'];
     const values=[id,session.playerKey,raw.title,raw.description,raw.category,raw.matchKey,raw.occurredOn,raw.hero,raw.size,raw.duration,raw.mime,'pending',await hash(uploadToken),await hash(ownerToken),now,now+3600000];
-    const result=await run(env,`INSERT INTO moments (${columns.join(',')}) SELECT ${columns.map(()=>'?').join(',')} WHERE (SELECT COALESCE(SUM(size+?),0) FROM moments WHERE ${activeWhere})+?<=? AND (SELECT COUNT(*) FROM moments WHERE uploader_key=? AND created_at>=? AND status NOT IN ('deleted','expired'))<?`,...values,LIMITS.posterBytes,raw.size+LIMITS.posterBytes,LIMITS.totalBytes,session.playerKey,dayStart(now),LIMITS.uploadsPerDay);
+    const result=await run(env,`INSERT INTO moments (${columns.join(',')}) SELECT ${columns.map(()=>'?').join(',')} WHERE (SELECT COALESCE(SUM((${ALLOCATED_SIZE})+?),0) FROM moments WHERE ${activeWhere})+?<=? AND (SELECT COUNT(*) FROM moments WHERE uploader_key=? AND created_at>=? AND status NOT IN ('deleted','expired'))<?`,...values,LIMITS.posterBytes,raw.size+LIMITS.posterBytes,LIMITS.totalBytes,session.playerKey,dayStart(now),LIMITS.uploadsPerDay);
     if(!changes(result)){const count=await get(env,"SELECT COUNT(*) AS n FROM moments WHERE uploader_key=? AND created_at>=? AND status NOT IN ('deleted','expired')",session.playerKey,dayStart(now));throw new ApiError(count.n>=LIMITS.uploadsPerDay?'今天已达到 5 条上传额度，明天再来':'视频空间已满，请联系管理员清理',count.n>=LIMITS.uploadsPerDay?429:507);}
     await env.DB.batch(raw.players.map(key=>statement(env,'INSERT INTO moment_players(moment_id,player_key) VALUES(?,?)',id,key)));
+    if(body.archiveRequested)await enqueueArchive(env,id,now);
     return respond({id,uploadToken,ownerToken,expiresAt:now+3600000},201);
    }
    const route=/^\/moments\/([a-f0-9-]{36})(?:\/(video|poster|upload|likes|comments))?$/.exec(url.pathname);
@@ -101,6 +105,7 @@ export default {
    }
    if(['GET','HEAD'].includes(request.method)&&['video','poster'].includes(action)){
     const m=await findMoment(env,id,true);if(!env.MEDIA)throw new ApiError('视频空间暂不可用',503);
+    if(action==='video'&&(await archiveFor(env,id))?.sourceAvailable===false)throw new ApiError('原片已转存，请使用页面中的 B站播放器',410);
     if(action==='poster'&&!m.poster_size)throw new ApiError('没有封面',404);
     const key=(action==='video'?'videos/':'posters/')+id+(action==='video'?'.mp4':'.jpg'),head=await env.MEDIA.head(key);if(!head)throw new ApiError('视频文件暂不可用',404);
     let range;try{range=parseRange(request.headers.get('Range'),head.size);}catch(e){return new Response(null,{status:416,headers:{...cors,'Content-Range':'bytes */'+head.size}});}

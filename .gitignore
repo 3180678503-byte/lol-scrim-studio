@@ -19,3 +19,6 @@ backend/wrangler.deploy.jsonc
 backend/moments.deploy.jsonc
 .dev.vars*
 node_modules/
+cookies.json
+cookies-*.json
+*bilibili-private*.json
