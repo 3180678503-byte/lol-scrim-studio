@@ -66,6 +66,13 @@ class Checks(unittest.TestCase):
         r.source_path(ID).write_bytes(b'changed')
         r.reconcile_and_verify([job])
         self.assertFalse(any(p.endswith('/release') for p, _ in self.api.calls))
+
+    def test_directory_mode_preserves_minimum_original_retention(self):
+        r=self.runner();r.submit_one(self.job);r.config['retainDays']=0
+        r.inspect=lambda b:{'bvid':BV,'state':0,'owner':{'mid':123},'cid':9,'desc':'名场面编号：'+ID}
+        r.reconcile_and_verify([{'id':ID,'state':'submitted','bvid':BV,'readyAt':0}])
+        self.assertFalse(any(p.endswith('/release') for p,_ in self.api.calls))
+        self.assertTrue(r.source_path(ID).exists())
     def test_wrong_account_or_waiting_moderation(self):
         self.assertIsNone(u.verified_fields({'bvid': BV, 'state': 0, 'owner': {'mid': 999}, 'cid': 1}, BV, 123))
         self.assertIsNone(u.verified_fields({'bvid': BV, 'state': -4, 'owner': {'mid': 123}, 'cid': 1}, BV, 123))
@@ -176,6 +183,24 @@ class Checks(unittest.TestCase):
         self.assertEqual(metadata['tags'][0],'无畏契约')
         self.assertNotIn('英雄联盟',metadata['tags'])
         self.assertNotIn('英雄联盟',metadata['description'])
+
+    def test_static_directory_excludes_interactions_and_credentials(self):
+        site=self.root/'site';(site/'moments').mkdir(parents=True);(site/'moments/index.html').write_text('gallery')
+        public={'id':ID,'title':'旧视频','description':'','players':['qwer#77051'],'uploaderKey':'qwer#77051','hero':'芮尔','category':'funny','createdAt':1,'duration':1,'hasPoster':True,'archive':{'state':'ready','bvid':BV,'sourceAvailable':True},'likes':['qwer#77051'],'commentCount':2,'owner_hash':'not-public'}
+        class DirectoryAPI:
+            calls=[]
+            def request(self,path,payload=None,target=None,lease=None):
+                self.calls.append(path)
+                if target:pathlib.Path(target).write_bytes(b'\xff\xd8\xff\xd9');return 4
+                if path=='/catalog':return {'members':[{'key':'qwer#77051','name':'qwer'}],'matches':{}}
+                return {'items':[public],'nextOffset':None}
+        api=DirectoryAPI();config={**self.cfg,'catalogSitePath':str(site)}
+        self.assertTrue(u.export_directory(config,api)['changed'])
+        self.assertFalse(u.export_directory(config,api)['changed'])
+        result=u.read_json(site/'moments/catalog.json');text=json.dumps(result)
+        for secret in ('likes','commentCount','sourceAvailable','owner_hash','not-public'):self.assertNotIn(secret,text)
+        self.assertEqual(result['items'][0]['posterPath'],'covers/'+ID+'.jpg')
+        self.assertEqual(sum(p.endswith('/poster') for p in api.calls),1)
 
 
 if __name__ == '__main__':

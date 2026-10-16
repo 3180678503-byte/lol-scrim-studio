@@ -1,0 +1,4 @@
+{$STUDIO_DOMAIN} {
+    encode gzip
+    reverse_proxy studio:8080
+}

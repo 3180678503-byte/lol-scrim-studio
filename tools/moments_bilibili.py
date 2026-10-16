@@ -644,6 +644,62 @@ class Runner:
         return self.events
 
 
+def export_directory(config, api=None):
+    """Write a public, static directory. No cookies, source URLs or interactions."""
+    if not config.get('catalogSitePath'):
+        return None
+    site = pathlib.Path(config['catalogSitePath']).resolve()
+    if not (site / 'moments/index.html').is_file():
+        raise JobError('catalog_site_not_found')
+    api = api or API(config['workerUrl'], config['archiveKey'])
+    catalog = api.request('/catalog')
+    moments, offset = [], 0
+    for _ in range(1000):
+        page = api.request('/moments?offset=' + str(offset))
+        moments.extend(page['items'])
+        next_offset = page.get('nextOffset')
+        if next_offset is None:
+            break
+        if not isinstance(next_offset, int) or next_offset <= offset:
+            raise JobError('invalid_catalog_pagination')
+        offset = next_offset
+    else:
+        raise JobError('catalog_too_large')
+    covers = site / 'moments/covers'
+    covers.mkdir(parents=True, exist_ok=True)
+    items = []
+    for m in moments:
+        if not ID_RE.fullmatch(m['id']):
+            raise JobError('invalid_job_id')
+        poster = covers / (m['id'] + '.jpg')
+        if m.get('hasPoster') and not poster.exists():
+            temporary = poster.with_suffix('.tmp')
+            try:
+                api.request('/moments/' + m['id'] + '/poster', target=temporary)
+                data = temporary.read_bytes()
+                if not data.startswith(b'\xff\xd8') or len(data) > 120000:
+                    raise JobError('invalid_directory_cover')
+                temporary.replace(poster)
+            finally:
+                temporary.unlink(missing_ok=True)
+        public = {k: m.get(k) for k in ('id', 'uploaderKey', 'title', 'description', 'category', 'players', 'matchKey', 'occurredOn', 'hero', 'duration', 'createdAt')}
+        archive = m.get('archive') or {}
+        public['archive'] = {'state': archive.get('state', 'queued'), 'bvid': archive.get('bvid') if archive.get('state') == 'ready' else None}
+        public['posterPath'] = 'covers/' + poster.name if poster.exists() else None
+        items.append(public)
+    result = {'schemaVersion': 1, 'members': catalog['members'], 'matches': catalog.get('matches', {}), 'items': items}
+    output = site / 'moments/catalog.json'
+    changed = read_json(output) != result
+    if changed:
+        save_json(output, result)
+    active = {m['id'] + '.jpg' for m in items}
+    for poster in covers.glob('*.jpg'):
+        if ID_RE.fullmatch(poster.stem) and poster.name not in active:
+            poster.unlink()
+            changed = True
+    return {'items': len(items), 'changed': changed}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, type=pathlib.Path)
@@ -697,6 +753,10 @@ def main():
             print(json.dumps({'recovered': job_id, 'bvid': bvid}))
             return 0
         events = runner.run(args.publish)
+        if args.publish:
+            directory = export_directory(cfg, runner.api)
+            if directory:
+                runner.note('static_directory_exported', **directory)
         result = {'time': int(time.time() * 1000), 'publish': args.publish, 'events': events}
         save_json(root / 'last-run.json', result)
         print(json.dumps(result, ensure_ascii=False))

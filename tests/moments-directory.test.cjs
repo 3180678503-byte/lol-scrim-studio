@@ -1,0 +1,5 @@
+const assert=require('node:assert/strict'),model=require('../moments/directory.js');
+const items=[{id:'one',title:'抢龙',description:'',hero:'泽拉斯',players:['qwer','Keifuu'],category:'highlight',createdAt:2,archive:{state:'ready',bvid:'BV17sJt6bEhi'}},{id:'two',title:'Q闪W',description:'',hero:'芮尔',players:['qwer'],category:'funny',createdAt:1,archive:{state:'submitted',bvid:null}}];
+assert.equal(model.videoURL(items[0]),'https://www.bilibili.com/video/BV17sJt6bEhi/');assert.equal(model.videoURL(items[1]),null);assert.equal(model.videoURL({archive:{state:'ready',bvid:'javascript:alert(1)'}}),null);
+assert.deepEqual(model.page({items},{player:'Keifuu'}).items.map(m=>m.id),['one']);assert.equal(model.page({items},{player:'qwer',category:'funny'}).total,1);assert.equal(model.page({items},{search:'芮尔'}).items[0].id,'two');assert.equal(model.page({items},{sort:'old'}).items[0].id,'two');assert.equal(model.page({items},{search:'没有这个视频'}).total,0);
+console.log(JSON.stringify({bilibiliOnlyLinks:true,pendingNoPlayback:true,multiplePlayerFilter:true,heroSearch:true,sort:true,invalidBvidRejected:true}));
