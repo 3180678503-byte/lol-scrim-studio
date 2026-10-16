@@ -101,6 +101,10 @@ class Checks(unittest.TestCase):
         self.assertIn('名场面编号：' + ID, command[command.index('--desc')+1])
         with self.assertRaises(u.JobError):
             self.runner().source_path('../../secret')
+    def test_video_title_carries_specific_category(self):
+        job={**self.job,'category':'funny'}
+        command=u.upload_command(self.cfg,job,self.root/'one.mp4')
+        self.assertEqual(command[command.index('--title')+1],'【下饭操作】'+job['title'])
     def test_credentials_missing_and_single_instance(self):
         with u.single_instance(self.root):
             with self.assertRaises(u.JobError):

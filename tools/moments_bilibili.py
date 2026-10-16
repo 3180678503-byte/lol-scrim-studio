@@ -18,6 +18,7 @@ UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.
 BV_RE = re.compile(r'\bBV[A-Za-z0-9]{10}\b')
 ID_RE = re.compile(r'^[a-f0-9-]{36}$')
 COLLECTION_NAMES = {'highlight': '名场面', 'funny': '下饭操作', 'teamwork': '默契配合', 'meme': '整活现场'}
+VIDEO_LABELS = {**COLLECTION_NAMES, 'highlight': '神操作'}
 
 
 class JobError(Exception):
@@ -30,6 +31,9 @@ class CollectionError(JobError):
 
 class Collections:
     """Private creator-center API; credentials never leave Bilibili's host."""
+    host = 'https://member.bilibili.com'
+    referer = 'https://member.bilibili.com/platform/'
+    allowed_prefixes = ('/x2/creative/web/', '/x/vu/web/cover/up', '/x/vupre/web/archive/pre')
     def __init__(self, cookie_path):
         info = read_json(cookie_path)
         cookies = {str(c['name']): str(c['value']) for c in (info or {}).get('cookie_info', {}).get('cookies', [])}
@@ -40,9 +44,9 @@ class Collections:
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def request(self, path, form=None, payload=None):
-        if not path.startswith(('/x2/creative/web/', '/x/vu/web/cover/up', '/x/vupre/web/archive/pre')):
+        if not path.startswith(self.allowed_prefixes):
             raise CollectionError('invalid_collection_api_path')
-        headers = {'User-Agent': UA, 'Cookie': self.cookie, 'Referer': 'https://member.bilibili.com/platform/', 'Origin': 'https://member.bilibili.com'}
+        headers = {'User-Agent': UA, 'Cookie': self.cookie, 'Referer': self.referer, 'Origin': urllib.parse.urlsplit(self.referer)._replace(path='').geturl().rstrip('/')}
         body = None
         if form is not None:
             body = urllib.parse.urlencode({**form, 'csrf': self.csrf}).encode()
@@ -51,10 +55,12 @@ class Collections:
             path += ('&' if '?' in path else '?') + urllib.parse.urlencode({'csrf': self.csrf})
             body = json.dumps({**payload, 'csrf': self.csrf}).encode()
             headers['Content-Type'] = 'application/json'
-        req = urllib.request.Request('https://member.bilibili.com' + path, data=body, headers=headers)
+        req = urllib.request.Request(self.host + path, data=body, headers=headers)
         try:
             with self.opener.open(req, timeout=30) as response:
                 result = json.load(response)
+        except urllib.error.HTTPError as error:
+            raise CollectionError('bilibili_collection_http_' + str(error.code)) from None
         except (urllib.error.URLError, ValueError, TimeoutError, OSError):
             raise CollectionError('bilibili_collection_network_error') from None
         if result.get('code') != 0:
@@ -122,6 +128,100 @@ class Collections:
         if not membership():
             raise CollectionError('collection_membership_not_confirmed')
         return 'added'
+
+
+class Series(Collections):
+    """Bilibili space video lists (called series in the current official UI)."""
+    host = 'https://api.bilibili.com'
+    referer = 'https://space.bilibili.com/'
+    allowed_prefixes = ('/x/series/', '/x/space/series/list')
+
+    def __init__(self, cookie_path):
+        super().__init__(cookie_path)
+        self.mid = credential_mid(cookie_path)
+
+    def can_create(self):
+        data = self.request('/x/series/canCreateSeries?' + urllib.parse.urlencode({'mid': self.mid})) or {}
+        return data.get('is_can_create_series') is True
+
+    def list(self):
+        entries = []
+        for pn in range(1, 101):
+            data = self.request('/x/space/series/list?' + urllib.parse.urlencode({'mid': self.mid, 'page_size': 20, 'page_num': pn})) or {}
+            page = data.get('list') or []
+            entries.extend(page)
+            if len(page) < 20:
+                break
+        return entries
+
+    def create(self, title, description, keyword):
+        if not title or len(title) > 10:
+            raise CollectionError('series_name_must_be_1_to_10_characters')
+        return self.request('/x/series/series/createAndAddArchives', form={'mid': self.mid, 'name': title, 'keywords': keyword, 'description': description[:256], 'aids': ''})
+
+    def ensure_video(self, binding, video, mid):
+        series_id, aid = binding.get('seriesId'), video.get('aid')
+        if binding.get('ownerMid') != mid or self.mid != mid or video.get('owner', {}).get('mid') != mid:
+            raise CollectionError('collection_account_mismatch')
+        if any(not isinstance(x, int) or x <= 0 for x in (series_id, aid)):
+            raise CollectionError('invalid_series_binding')
+        data = self.request('/x/series/series?' + urllib.parse.urlencode({'series_id': series_id})) or {}
+        if (data.get('meta') or {}).get('mid') != mid:
+            raise CollectionError('series_owner_mismatch')
+        def membership():
+            for pn in range(1, 101):
+                data = self.request('/x/series/archives?' + urllib.parse.urlencode({'mid': mid, 'series_id': series_id, 'only_normal': 'true', 'sort': 'desc', 'pn': pn, 'ps': 100})) or {}
+                aids = data.get('aids') or [item.get('aid') for item in (data.get('archives') or [])]
+                if aid in aids:
+                    return True
+                if len(aids) < 100 or pn * 100 >= (data.get('page') or {}).get('total', 0):
+                    return False
+            raise CollectionError('series_membership_too_large_to_verify')
+        if membership():
+            return 'already_present'
+        self.request('/x/series/series/addArchives', form={'mid': mid, 'series_id': series_id, 'aids': str(aid)})
+        if not membership():
+            raise CollectionError('series_membership_not_confirmed')
+        return 'added'
+
+
+class CategoryLists:
+    def __init__(self, cookie_path):
+        self.cookie_path = cookie_path
+        self.clients = {}
+
+    def ensure_video(self, binding, video, mid):
+        kind = binding.get('kind', 'season')
+        if kind not in ('season', 'series'):
+            raise CollectionError('unknown_category_list_kind')
+        if kind not in self.clients:
+            self.clients[kind] = (Series if kind == 'series' else Collections)(self.cookie_path)
+        return self.clients[kind].ensure_video(binding, video, mid)
+
+
+def configure_series(config_path):
+    config = read_json(config_path)
+    client = Series(config['cookiePath'])
+    mid = credential_mid(config['cookiePath'])
+    if not client.can_create():
+        raise CollectionError('bilibili_series_not_enabled_for_account')
+    bindings = config.get('categoryCollections', {})
+    for category, title in COLLECTION_NAMES.items():
+        def find():
+            rows = [(entry.get('meta') or entry) for entry in client.list()]
+            return [entry for entry in rows if entry.get('name') == title and entry.get('mid') == mid]
+        existing = find()
+        if len(existing) > 1:
+            raise CollectionError('ambiguous_existing_series_' + category)
+        if not existing:
+            client.create(title, '英雄联盟群友' + title + '，按网站分类持续更新。', '【' + VIDEO_LABELS[category] + '】')
+            existing = find()
+        if len(existing) != 1 or not isinstance(existing[0].get('series_id'), int):
+            raise CollectionError('created_series_not_visible')
+        bindings[category] = {'kind': 'series', 'seriesId': existing[0]['series_id'], 'title': title, 'ownerMid': mid}
+        config['categoryCollections'] = bindings
+        save_json(config_path, config)
+    return bindings
 
 
 def configure_collections(config_path, cover_directory):
@@ -285,7 +385,8 @@ def upload_command(config, job, source):
     if config.get('bilibiliProxy'):
         command += ['-p', config['bilibiliProxy']]
     # The command runs without a shell; a friend's title cannot become code.
-    command += ['upload', '--submit', 'web', '--title', ('【峡谷名场面】' + job['title'])[:80], '--desc', description[:1900], '--tag', '英雄联盟,游戏集锦,峡谷名场面', '--copyright', '1', '--tid', '171', '--no-reprint', '1', '--limit', '2', str(source)]
+    label = VIDEO_LABELS.get(job.get('category'), '峡谷名场面')
+    command += ['upload', '--submit', 'web', '--title', ('【' + label + '】' + job['title'])[:80], '--desc', description[:1900], '--tag', '英雄联盟,游戏集锦,峡谷名场面', '--copyright', '1', '--tid', '171', '--no-reprint', '1', '--limit', '2', str(source)]
     return command
 
 
@@ -322,7 +423,7 @@ class Runner:
         self.inspect = inspect_video
         self.execute = execute or self.execute_cli
         self.mid = credential_mid(config['cookiePath'])
-        self.collections = collections or (Collections(config['cookiePath']) if config.get('categoryCollections') else None)
+        self.collections = collections or (CategoryLists(config['cookiePath']) if config.get('categoryCollections') else None)
         self.events = []
 
     def note(self, event, **values):
@@ -479,6 +580,8 @@ def main():
     collection_options = parser.add_mutually_exclusive_group()
     collection_options.add_argument('--collections', action='store_true', help='Read account collection permission and existing collections')
     collection_options.add_argument('--setup-collections', action='store_true', help='Create or reuse four category collections and save private bindings')
+    collection_options.add_argument('--series', action='store_true', help='Read account space video list permission and existing lists')
+    collection_options.add_argument('--setup-series', action='store_true', help='Create or reuse four category space video lists')
     parser.add_argument('--collection-covers', type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[1] / 'assets' / 'collection-covers')
     parser.add_argument('--attach', nargs=2, metavar=('MOMENT_ID', 'BVID'), help='Recover a known publication; validates account and description marker')
     args = parser.parse_args()
@@ -494,15 +597,17 @@ def main():
             report['ownerMid'] = credential_mid(cfg['cookiePath'])
         print(json.dumps(report, ensure_ascii=False))
         return 0
-    if args.collections or args.setup_collections:
+    if args.collections or args.setup_collections or args.series or args.setup_series:
         mid = credential_mid(cfg['cookiePath'])
         check_login(cfg['cookiePath'], mid)
-        if args.collections:
-            client = Collections(cfg['cookiePath'])
-            print(json.dumps({'canCreateCollections': client.can_create(), 'collections': [{'id': e['season']['id'], 'title': e['season']['title']} for e in client.list()]}, ensure_ascii=False))
+        if args.collections or args.series:
+            client = (Series if args.series else Collections)(cfg['cookiePath'])
+            entries = [(e.get('meta') or e) for e in client.list()] if args.series else [e['season'] for e in client.list()]
+            print(json.dumps({'kind': 'series' if args.series else 'season', 'canCreate': client.can_create(), 'lists': [{'id': e.get('series_id', e.get('id')), 'title': e.get('name', e.get('title'))} for e in entries]}, ensure_ascii=False))
         else:
             with single_instance(pathlib.Path(cfg['privateRoot'])):
-                print(json.dumps({'categoryCollections': configure_collections(args.config, args.collection_covers)}, ensure_ascii=False))
+                bindings = configure_series(args.config) if args.setup_series else configure_collections(args.config, args.collection_covers)
+                print(json.dumps({'categoryCollections': bindings}, ensure_ascii=False))
         return 0
     root = pathlib.Path(cfg['privateRoot'])
     with single_instance(root):

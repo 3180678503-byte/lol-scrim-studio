@@ -57,7 +57,27 @@ python tools/moments_bilibili.py --config C:/private-moments/config.json --attac
 
 `last-run.json` 保存状态摘要，`receipts/` 保存原片散列和 BV 号。第三方工具的原始输出可能带登录信息，因此只在内存解析，不保存或公开。账号 Cookie、私有配置和密钥不进 GitHub。
 
-## 按网站分类加入 B站合集
+## 按网站分类加入 B站空间视频列表（当前使用）
+
+使用 B站个人空间里的「系列」实现四类视频列表：
+
+- [名场面](https://space.bilibili.com/353511010/lists/5182584?type=series)：网站「神操作」。
+- [下饭操作](https://space.bilibili.com/353511010/lists/5182585?type=series)。
+- [默契配合](https://space.bilibili.com/353511010/lists/5182586?type=series)。
+- [整活现场](https://space.bilibili.com/353511010/lists/5182587?type=series)。
+
+四个列表已创建，空列表也可分享。网站视频页提供入口。朋友上传时仍只选网站分类；投稿标题自动加上「【神操作】」「【下饭操作】」等分类前缀，B站列表设置相应关键词，供新投稿自动同步。后台在公开稿件验证通过后还会核对对应列表，必要时主动加入并读取确认。归类失败下次重试，不会重新上传视频；本机收据避免重复添加。比赛与相关玩家标签均不影响分类。
+
+查询账号的视频列表权限和列表，或在其他账号下初始化同样四类：
+
+```powershell
+python tools/moments_bilibili.py --config C:/private-moments/config.json --series
+python tools/moments_bilibili.py --config C:/private-moments/config.json --setup-series
+```
+
+初始化只创建空列表与分类关键词，不把账号原有视频混入；已有同名列表会复用，多个同名时暂停。私有 `categoryCollections` 中每项 `kind: "series"` 对应 `seriesId`，由原自动任务使用。列表封面由 B站根据列表视频展示，`assets/collection-covers/` 保留供将来投稿合集使用。
+
+## 投稿合集（可选，需要账号权益）
 
 支持四个独立的 B站**投稿合集**：
 
@@ -74,7 +94,7 @@ python tools/moments_bilibili.py --config C:/private-moments/config.json --attac
 python tools/moments_bilibili.py --config C:/private-moments/config.json --collections
 ```
 
-`canCreateCollections: false` 表示当前账号尚未开通投稿合集。此时普通视频投稿和网站分类继续工作；程序不会反复尝试创建合集。B站空间里的「视频列表」属于另一种功能，不会将其当作投稿合集。
+`canCreate: false` 表示当前账号尚未开通投稿合集。此时普通视频投稿、空间视频列表和网站分类继续工作；程序不会反复尝试创建投稿合集。投稿合集与空间系列是 B站的两种功能。
 
 账号开通权益后，一次性创建/绑定四个合集：
 

@@ -78,6 +78,43 @@ class CollectionsChecks(unittest.TestCase):
                 with self.assertRaisesRegex(u.CollectionError,'not_enabled'):
                     u.configure_collections(config,root/'missing-covers')
             self.assertNotIn('categoryCollections',u.read_json(config))
+    def test_series_create_only_metadata_no_existing_videos(self):
+        c=object.__new__(u.Series);c.mid=1;calls=[]
+        c.request=lambda path,form:calls.append((path,form))
+        c.create('下饭操作','群友录像','【下饭操作】')
+        self.assertEqual(calls[0][1]['aids'],'')
+        self.assertEqual(calls[0][1]['keywords'],'【下饭操作】')
+        with self.assertRaises(u.CollectionError):c.create('超过十个字符的名称不能创建','描述','关键词')
+    def test_series_membership_add_and_idempotence(self):
+        c=object.__new__(u.Series);c.mid=1;calls=[];state={'added':False}
+        def request(path,form=None):
+            calls.append((path,form))
+            if '/series/series?' in path:return {'meta':{'mid':1}}
+            if '/addArchives' in path:state['added']=True;return None
+            return {'aids':[30] if state['added'] else [],'page':{'total':int(state['added'])}}
+        c.request=request
+        binding={'kind':'series','seriesId':10,'ownerMid':1};video={'owner':{'mid':1},'aid':30}
+        self.assertEqual(c.ensure_video(binding,video,1),'added')
+        self.assertEqual(c.ensure_video(binding,video,1),'already_present')
+        self.assertEqual(sum('/addArchives' in p for p,_ in calls),1)
+    def test_setup_series_reuses_four_exact_named_lists(self):
+        class Lists:
+            entries=[]
+            creates=0
+            def can_create(self):return True
+            def list(self):return self.entries
+            def create(self,title,description,keyword):
+                self.creates+=1
+                self.entries.append({'meta':{'mid':1,'name':title,'series_id':self.creates}})
+        lists=Lists()
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder);cookie=root/'cookies.json';config=root/'config.json'
+            u.save_json(cookie,{'token_info':{'mid':1}});u.save_json(config,{'cookiePath':str(cookie),'privateRoot':folder})
+            with patch.object(u,'Series',return_value=lists):
+                first=u.configure_series(config);second=u.configure_series(config)
+            self.assertEqual(first,second);self.assertEqual(lists.creates,4)
+            self.assertEqual(set(first),set(u.COLLECTION_NAMES))
+            self.assertTrue(all(b['kind']=='series' for b in first.values()))
 
 
 if __name__=='__main__':unittest.main()
