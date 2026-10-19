@@ -5,13 +5,69 @@ from pathlib import Path
 from PIL import ImageGrab,Image
 import numpy as np
 
+class _KeyboardInput(ctypes.Structure):
+    _fields_=[('vk',w.WORD),('scan',w.WORD),('flags',w.DWORD),('time',w.DWORD),('extra',ctypes.c_size_t)]
+class _MouseInput(ctypes.Structure):
+    _fields_=[('dx',w.LONG),('dy',w.LONG),('data',w.DWORD),('flags',w.DWORD),('time',w.DWORD),('extra',ctypes.c_size_t)]
+class _HardwareInput(ctypes.Structure):
+    _fields_=[('message',w.DWORD),('low',w.WORD),('high',w.WORD)]
+class _InputUnion(ctypes.Union):
+    _fields_=[('keyboard',_KeyboardInput),('mouse',_MouseInput),('hardware',_HardwareInput)]
+class _Input(ctypes.Structure):
+    _fields_=[('type',w.DWORD),('data',_InputUnion)]
+class _MonitorInfo(ctypes.Structure):
+    _fields_=[('size',w.DWORD),('monitor',w.RECT),('work',w.RECT),('flags',w.DWORD)]
+
+def fit_window(bounds,workarea):
+    """Keep the window's proportions and fit it inside the present monitor."""
+    left,top,right,bottom=bounds;wl,wt,wr,wb=workarea
+    width=right-left;height=bottom-top
+    if min(width,height,wr-wl,wb-wt)<=0:raise RuntimeError('Invalid WeGame window or monitor bounds')
+    scale=min(1,(wr-wl)/width,(wb-wt)/height)
+    width=max(1,int(width*scale));height=max(1,int(height*scale))
+    left=max(wl,min(left,wr-width));top=max(wt,min(top,wb-height))
+    return left,top,left+width,top+height
+
+def activate_wegame(u,k,window,allowed_pids,sleep=time.sleep):
+    """Restore this observed WeGame window; retry a denied foreground request."""
+    def owned_window():
+        owner=w.DWORD();u.GetWindowThreadProcessId(window,ctypes.byref(owner))
+        if owner.value not in allowed_pids:raise RuntimeError('WeGame window ownership changed before activation')
+    owned_window()
+    # A tray window can retain a foreground handle while hidden. Explicitly
+    # show it before accepting that foreground handle as an actionable window.
+    u.ShowWindow(window,9);u.ShowWindow(window,5);sleep(.2)
+    for attempt in range(2):
+        if u.GetForegroundWindow()==window:return
+        if attempt:
+            # Windows permits foreground activation after ALT input. Do not
+            # release a modifier currently held by the user or change lock policy.
+            if any(u.GetAsyncKeyState(vk)&0x8000 for vk in (0x10,0x11,0x12)):
+                raise RuntimeError('Keyboard modifiers active; defer WeGame foreground')
+            owned_window()
+            events=(_Input*2)(_Input(1,_InputUnion(keyboard=_KeyboardInput(0x12,0,0,0,0))),_Input(1,_InputUnion(keyboard=_KeyboardInput(0x12,0,2,0,0))))
+            if u.SendInput(2,events,ctypes.sizeof(_Input))!=2:
+                raise RuntimeError('Cannot activate WeGame input; verify the unlocked desktop and administrator level')
+        attached=[];own=k.GetCurrentThreadId()
+        threads={u.GetWindowThreadProcessId(u.GetForegroundWindow(),None),u.GetWindowThreadProcessId(window,None)}
+        try:
+            for thread in threads-{0,own}:
+                if u.AttachThreadInput(own,thread,True):attached.append(thread)
+            u.ShowWindow(window,9);u.BringWindowToTop(window);u.SetForegroundWindow(window)
+        finally:
+            for thread in reversed(attached):u.AttachThreadInput(own,thread,False)
+        sleep(.5)
+    if u.GetForegroundWindow()!=window:raise RuntimeError('Cannot bring WeGame to foreground after bounded retry')
+
 def league_icon(image,bounds):
     """Match the LoL logo in the left recent-games list, excluding its background."""
     left,top,right,bottom=bounds;width=right-left;height=bottom-top
     area=(max(0,left),max(0,int(top+height*.12)),min(image.width,int(left+width*.16)),min(image.height,int(top+height*.82)))
     crop=image.crop(area);source=np.asarray(crop.resize((crop.width//2,crop.height//2)),dtype=np.float32)
     reference=Image.open(Path(__file__).with_name('wegame-league-icon.png')).convert('RGB');best=None
-    for scale in [.75,1,1.25,1.5]:
+    # The reference was captured on an external display. Support Windows
+    # scaling from 100% to 300%, rather than assuming that display's DPI.
+    for scale in [.5,.625,.75,.875,1,1.125,1.25,1.375,1.5,1.75,2]:
         template=np.asarray(reference.resize((int(reference.width*scale/2),int(reference.height*scale/2))),dtype=np.float32)
         th,tw=template.shape[:2];oh=source.shape[0]-th+1;ow=source.shape[1]-tw+1
         if oh<=0 or ow<=0:continue
@@ -52,7 +108,7 @@ def label_mask(image,box):
     crop=image.crop((left+width*.49,top+height*.20,left+width*.71,top+height*.82))
     return list(crop.convert('L').resize((64,40),Image.Resampling.BILINEAR).point(lambda p:0 if p<110 else 255).getdata())
 
-def click_launch(expected_pid,allowed_children=()):
+def click_launch(expected_pid,allowed_children=(),diagnostic_output=None):
     u=ctypes.WinDLL('user32',use_last_error=True);k=ctypes.WinDLL('kernel32')
     u.SetProcessDPIAware()
     callback_type=ctypes.WINFUNCTYPE(w.BOOL,w.HWND,w.LPARAM)
@@ -63,6 +119,9 @@ def click_launch(expected_pid,allowed_children=()):
     u.GetWindowTextW.argtypes=[w.HWND,w.LPWSTR,ctypes.c_int]
     u.SetForegroundWindow.argtypes=[w.HWND];u.ShowWindow.argtypes=[w.HWND,ctypes.c_int]
     u.BringWindowToTop.argtypes=[w.HWND];u.AttachThreadInput.argtypes=[w.DWORD,w.DWORD,w.BOOL]
+    u.GetAsyncKeyState.argtypes=[ctypes.c_int];u.GetAsyncKeyState.restype=ctypes.c_short
+    u.SendInput.argtypes=[w.UINT,ctypes.POINTER(_Input),ctypes.c_int];u.SendInput.restype=w.UINT
+    k.GetCurrentThreadId.restype=w.DWORD
     u.OpenInputDesktop.argtypes=[w.DWORD,w.BOOL,w.DWORD];u.OpenInputDesktop.restype=w.HANDLE
     u.SetThreadDesktop.argtypes=[w.HANDLE];u.CloseDesktop.argtypes=[w.HANDLE]
     u.GetUserObjectInformationW.argtypes=[w.HANDLE,ctypes.c_int,ctypes.c_void_p,w.DWORD,ctypes.POINTER(w.DWORD)]
@@ -101,20 +160,32 @@ def click_launch(expected_pid,allowed_children=()):
         text=ctypes.create_unicode_buffer(128);u.GetWindowTextW(h,text,128)
         pid=w.DWORD();u.GetWindowThreadProcessId(h,ctypes.byref(pid))
         r=w.RECT();u.GetWindowRect(h,ctypes.byref(r))
-        if pid.value in allowed_pids and text.value.lower()=='wegame' and u.IsWindowVisible(h) and r.right-r.left>900 and r.bottom-r.top>500:choices.append((h,r))
+        if pid.value in allowed_pids and text.value.lower()=='wegame' and r.right-r.left>900 and r.bottom-r.top>500:
+            choices.append((h,r,pid.value,bool(u.IsWindowVisible(h))))
         return True
     try:
         u.EnumWindows(enum,0)
         if not choices:raise RuntimeError('WeGame main window unavailable; verify saved login')
-        h,r=max(choices,key=lambda x:(x[1].right-x[1].left)*(x[1].bottom-x[1].top))
-        foreground=u.GetForegroundWindow();foreground_thread=u.GetWindowThreadProcessId(foreground,None)
-        own=k.GetCurrentThreadId();attached=u.AttachThreadInput(own,foreground_thread,True)
-        try:u.ShowWindow(h,9);u.BringWindowToTop(h);u.SetForegroundWindow(h)
-        finally:
-            if attached:u.AttachThreadInput(own,foreground_thread,False)
-        time.sleep(1)
-        if u.GetForegroundWindow()!=h:raise RuntimeError('Cannot bring WeGame to foreground')
+        # WeGame also owns larger hidden launcher placeholders. Its browser
+        # child is the real game-library window, including after DPI changes.
+        h,r,_,_=max(choices,key=lambda x:(x[3],x[2]!=expected_pid,(x[1].right-x[1].left)*(x[1].bottom-x[1].top)))
+        u.MonitorFromWindow.argtypes=[w.HWND,w.DWORD];u.MonitorFromWindow.restype=w.HANDLE
+        u.GetMonitorInfoW.argtypes=[w.HANDLE,ctypes.POINTER(_MonitorInfo)]
+        u.SetWindowPos.argtypes=[w.HWND,w.HWND,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,w.UINT]
+        info=_MonitorInfo();info.size=ctypes.sizeof(info)
+        if not u.GetMonitorInfoW(u.MonitorFromWindow(h,2),ctypes.byref(info)):
+            raise RuntimeError('Cannot identify the current WeGame monitor')
+        bounds=(r.left,r.top,r.right,r.bottom)
+        placed=fit_window(bounds,(info.work.left,info.work.top,info.work.right,info.work.bottom))
+        if placed!=bounds:
+            left,top,right,bottom=placed
+            if not u.SetWindowPos(h,None,left,top,right-left,bottom-top,0x14):raise RuntimeError('Cannot fit WeGame to the current monitor')
+        activate_wegame(u,k,h,allowed_pids)
+        if not u.IsWindowVisible(h):raise RuntimeError('WeGame main window remains hidden after activation')
         u.GetWindowRect(h,ctypes.byref(r));image=ImageGrab.grab()
+        if diagnostic_output:
+            output=Path(diagnostic_output);output.parent.mkdir(parents=True,exist_ok=True)
+            image.crop((r.left,r.top,r.right,r.bottom)).save(output)
         u.WindowFromPoint.argtypes=[w.POINT];u.WindowFromPoint.restype=w.HWND
         u.ScreenToClient.argtypes=[w.HWND,ctypes.POINTER(w.POINT)]
         u.PostMessageW.argtypes=[w.HWND,w.UINT,w.WPARAM,w.LPARAM];u.PostMessageW.restype=w.BOOL
@@ -147,6 +218,6 @@ def click_launch(expected_pid,allowed_children=()):
 
 if __name__=='__main__':
     import argparse
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--wegame-pid',required=True,type=int);p.add_argument('--allowed-child-pids',default='');args=p.parse_args()
-    try:print(json.dumps(click_launch(args.wegame_pid,[int(pid) for pid in args.allowed_child_pids.split(',') if pid])))
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--wegame-pid',required=True,type=int);p.add_argument('--allowed-child-pids',default='');p.add_argument('--diagnostic-output');args=p.parse_args()
+    try:print(json.dumps(click_launch(args.wegame_pid,[int(pid) for pid in args.allowed_child_pids.split(',') if pid],args.diagnostic_output)))
     except (RuntimeError,OSError) as e:raise SystemExit(str(e))

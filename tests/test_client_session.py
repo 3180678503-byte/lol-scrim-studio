@@ -2,7 +2,7 @@ import sys,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 from league_client_session import ClientSession
-from wegame_ui import launch_button,label_mask
+from wegame_ui import launch_button,label_mask,activate_wegame,fit_window,league_icon
 from PIL import Image,ImageDraw
 
 class Fake:
@@ -24,6 +24,47 @@ class Fake:
     def clock(self):return self.now
 
 class SessionTests(unittest.TestCase):
+    def test_removed_external_monitor_and_smaller_laptop_screen(self):
+        self.assertEqual(fit_window((3000,700,5300,2140),(0,0,1920,1040)),(259,0,1920,1040))
+        self.assertEqual(fit_window((-300,50,850,770),(0,0,1920,1040)),(0,50,1150,770))
+        self.assertEqual(fit_window((100,100,1250,820),(0,0,1920,1040)),(100,100,1250,820))
+    def test_league_logo_at_laptop_dpi(self):
+        reference=Image.open(Path(__file__).resolve().parents[1]/'tools/wegame-league-icon.png').convert('RGB')
+        for scale in [.5,.625,.75,1,1.5]:
+            image=Image.new('RGB',(1440,900),(30,30,30))
+            logo=reference.resize((int(reference.width*scale),int(reference.height*scale)))
+            image.paste(logo,(20,260))
+            x,y=league_icon(image,(0,0,1440,900))
+            self.assertLess(abs(x-(20+logo.width/2)),6)
+            self.assertLess(abs(y-(260+logo.height/2)),6)
+    def test_foreground_denial_retries_alt_and_detaches_threads(self):
+        class Windows:
+            foreground=7;permission=False;keys=False;sent=0
+            attached=[]
+            def GetForegroundWindow(self):return self.foreground
+            def GetWindowThreadProcessId(self,h,p):
+                if p is not None:p._obj.value=42
+                return h+100
+            def GetCurrentThreadId(self):return 1000
+            def GetAsyncKeyState(self,vk):return 0x8000 if self.keys else 0
+            def SendInput(self,count,events,size):
+                self.sent+=1;self.permission=True
+                assert count==2 and events[0].data.keyboard.vk==0x12 and events[1].data.keyboard.flags==2
+                return count
+            def AttachThreadInput(self,a,b,enabled):self.attached.append((b,enabled));return True
+            def ShowWindow(self,*args):pass
+            def BringWindowToTop(self,*args):pass
+            def SetForegroundWindow(self,h):
+                if self.permission:self.foreground=h
+        u=Windows();activate_wegame(u,u,9,{42},sleep=lambda s:None)
+        self.assertEqual(u.foreground,9);self.assertEqual(u.sent,1)
+        for thread in {t for t,on in u.attached}:self.assertEqual(sum(on for t,on in u.attached if t==thread),sum(not on for t,on in u.attached if t==thread))
+        u=Windows();u.keys=True;u.attached=[]
+        with self.assertRaisesRegex(RuntimeError,'modifiers'):activate_wegame(u,u,9,{42},sleep=lambda s:None)
+        self.assertEqual(u.sent,0)
+        u=Windows();u.attached=[]
+        with self.assertRaisesRegex(RuntimeError,'ownership'):activate_wegame(u,u,9,{99},sleep=lambda s:None)
+        self.assertEqual(u.sent,0)
     def test_existing_client_is_never_closed(self):
         b=Fake(True);s=ClientSession(b,'me');s.open();s.close()
         self.assertEqual((b.started,b.quits),(0,0))
