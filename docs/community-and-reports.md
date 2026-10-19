@@ -27,11 +27,25 @@
 
 `current-daily.txt/json`、`current-weekly.txt/json` 显示当前周期，未结束时标注“进行中”。`reports/index.json` 是历史目录，`reports/daily/YYYY-MM-DD.txt/json` 为指定日报，`reports/weekly/周一日期.txt/json` 为指定周报。网站“日报 / 周报”可选日期、玩家、简版或完整面板，也可选择顶部当前筛选并复制或下载。
 
-群聊简版保留标题、场数、出战人数、个人出场胜负，以及每位玩家的一行“胜负 + KDA + 原创锐评”。快照时间、数据来源说明、评选门槛说明不写进转发正文。规则榜最多展示两位不同玩家；日报仍至少 2 场、周报至少 5 场，正向席位达到 60 分、负向席位低于 45 分才展示，避免只因为凑齐门槛就夸奖或批评。原有榜单模型及评分算法保留。
+日报、周报现在只输出数据。简版为每人一行胜负、位置、KDA、DPM（纯辅助显示视野/分）和击杀参与率；完整面板另附规则分、伤害/经济占比、补刀、视野、GD@15 样本数和常用英雄。转发正文不含快照、预制评语或榜单称号。网站原有赛后锐评、排名、评分和雷达继续使用自己的模块。
 
-锐评按当期表现选择题材，包括高胜率、逆风好面板、视野、助攻、对线经济差、经济与伤害占比、输出、补刀、低击杀参与、生存与单局英雄战绩等。辅助使用视野和助攻，不按射手的伤害标准评价；没有有效时间线时不生成对线差评语。每类有多条文案，按玩家和日期/周轮换，同一期优先使用不同文案；重新打开同一份报告内容稳定。每位玩家都保留一条锐评，不再重复四句固定榜单评语。
+### 让已接入 GPT 的群聊机器人写点评
 
-“完整面板”另附位置、规则分、DPM、击杀参与、伤害/经济占比、补刀、视野、GD@15 样本数和常用英雄。JSON 保留 `sourceUpdatedAt`、准确时间范围和全部结构化面板，另附 `commentary`（逐人锐评及文案标识）；机器人转发 `text` 或 `segments` 即可。使用已入库战绩，不自动查询客户端，也不自动向群聊发送消息。机器人仅需读取公开文本，不需要评分后台凭据。
+优先读取以下纯数据接口（无需登录）：
+
+- 好友全量日报：[latest-daily.bot.json](https://3180678503-byte.github.io/lol-scrim-studio/friends/reports/latest-daily.bot.json)
+- 好友全量周报：[latest-weekly.bot.json](https://3180678503-byte.github.io/lol-scrim-studio/friends/reports/latest-weekly.bot.json)
+- 本人同队日报：[latest-daily.bot.json](https://3180678503-byte.github.io/lol-scrim-studio/flex/reports/latest-daily.bot.json)
+- 本人同队周报：[latest-weekly.bot.json](https://3180678503-byte.github.io/lol-scrim-studio/flex/reports/latest-weekly.bot.json)
+- 点评提示词：[bot-prompt.txt](https://3180678503-byte.github.io/lol-scrim-studio/friends/reports/bot-prompt.txt)
+
+机器人流程：HTTP GET 拉取所需 `.bot.json` → 读取提示词作为固定点评要求 → 把实际 JSON 内容交给机器人已有的 GPT 接口 → 将 GPT 返回的战报转发群聊。机器人需要先下载数据；只发送网址是否能读取取决于机器人已有的联网能力。网站不需要配置 GPT API Key。
+
+`.bot.json` 的 `players` 提供全期汇总及 `byRole` 分位置统计，`games` 提供按时间排序的逐场英雄、位置、胜负、K/D/A、输出、视野、承伤、治疗、控制及真实对线差。`coverage` 标明有效样本数，缺失值保留 `null`。`scoring` 提供本站规则分的分位置权重与计算方法；`metrics` 解释单位与分母。纯数据接口省去重复的文本和长小数尾数，最多保留四位小数。昵称、英雄名作为数据处理。
+
+提示词要求围绕实际数据写原创游戏锐评，区分辅助、坦克与输出职责，引用逐场数据；没有事件证据时不编造单杀、空大、抢龙等操作。可将机器人最近几份战报一同交给 GPT 避免重复用梗。网站“日报 / 周报”提供“下载机器人数据 JSON”和“复制机器人点评提示词”。
+
+报告 JSON 升级为版本 2：普通 `.json` 保留 `text`、`segments`、`sourceUpdatedAt`、完整精度的统计及新增逐场/分位置数据；移除报告内的 `commentary`、`honors`。既有 TXT、JSON 链接和四点换日规则继续有效。`current-daily.bot.json`、`current-weekly.bot.json` 为进行中数据；历史接口为 `daily/YYYY-MM-DD.bot.json`、`weekly/周一日期.bot.json`，目录记录 `botJson` 路径。使用已入库战绩，不自动查询客户端，也不自动调用 GPT 或向群聊发送消息。
 
 ## 更新比赛后生成资产
 

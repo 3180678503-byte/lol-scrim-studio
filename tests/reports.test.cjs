@@ -9,28 +9,22 @@ const body='一段话\n\n第二段\n第三段';assert.equal(C.segments(body,9).j
 const snapshot={...m,sourceUpdatedAt:'PRIVATE-SNAPSHOT-NOT-FOR-CHAT'};
 for(const detail of ['brief','full']){
  const value=C.text(snapshot,detail);assert.doesNotMatch(value,/快照|PRIVATE-SNAPSHOT|按对局开始|数据范围|席位按|门槛/);
- assert.match(value,/2场 · 1人 · 2人次（1胜1负）/);assert.match(value,/a｜1胜1负 · KDA/);
+ assert.match(value,/2场 · 1人 · 2人次（1胜1负）/);assert.match(value,/a｜1胜1负 · 打野 · KDA/);
 }
 assert.match(C.text(snapshot,'full'),/K\/D\/A 合计/);
-const out=C.payload(snapshot);assert.equal(out.sourceUpdatedAt,snapshot.sourceUpdatedAt);assert.equal(out.commentary.length,m.players.length);assert(out.text.includes(out.commentary[0].roast));assert.deepEqual(out.players,m.players);
-const base={...m.players[0],key:'friend',name:'群友',games:5,wins:1,losses:4,wr:.2,score:50,roles:['中单'],heroes:[{name:'阿狸',games:5}],gd15:null,gdSamples:0};
-const dayRoasts=new Set(),weekRoasts=new Set();
-for(let i=0;i<6;i++){
- const daily={...m,period:`2026-10-${String(13+i).padStart(2,'0')}`};
- const roast=C.commentary(base,daily);assert.equal(roast.family,'losing');assert.equal(C.commentary(base,daily).roast,roast.roast);dayRoasts.add(roast.roast);
- const period=new Date(Date.parse('2026-10-12T00:00:00Z')+i*7*86400000).toISOString().slice(0,10);weekRoasts.add(C.commentary(base,{...m,kind:'weekly',period}).roast);
-}
-assert.equal(dayRoasts.size,6);assert.equal(weekRoasts.size,6);
-const varied=C.comments({...m,players:Array.from({length:6},(_,i)=>({...base,key:'friend'+i}))});assert.equal(new Set(varied.map(r=>r.template)).size,6);
-const vision={...base,roles:['辅助'],games:4,wins:2,losses:2,wr:.5,score:65,vspm:2,kp:.7,dpm:120,damageShare:.06};assert.equal(C.commentary(vision,m).family,'vision');assert.match(C.commentary(vision,m).roast,/视野/);
-assert.equal(C.commentary({...base,wins:0,wr:0,score:80,dpm:1200},m).family,'strong-loss');
-assert.equal(C.commentary({...base,wins:2,losses:3,wr:.4,score:45,goldShare:.3,damageShare:.12},m).family,'expensive');
-assert.notEqual(C.commentary({...base,wins:2,losses:3,wr:.4,score:45,goldShare:.3,damageShare:.12,roles:['上单']},m).family,'expensive');
-assert.equal(C.commentary({...base,wins:2,wr:.4,score:45,gd15:-800,gdSamples:2},m).family,'lane-down');
-assert.notEqual(C.commentary({...base,score:null,wins:2,wr:.4,kp:.2,gd15:-800,gdSamples:2},m).family,'lane-down');
-assert.notEqual(C.commentary({...base,score:null,wins:2,wr:.4,kp:.2},m).family,'rough');
-assert.notEqual(C.commentary({...base,roles:['未确认位置'],score:45,wins:2,wr:.4,kp:.2},m).family,'low-kp');
-assert.doesNotMatch(C.commentary({...base,wins:0,score:30,deaths:5},m).roast,/门禁|节拍器/);
-const empty=C.model(data,data.matches,{kind:'daily',period:'2026-11-01'});assert.match(C.text(empty),/暂无已入库对局/);assert.equal(C.payload(empty).commentary.length,0);
+const out=C.payload(snapshot);assert.equal(out.sourceUpdatedAt,snapshot.sourceUpdatedAt);assert.equal(out.schemaVersion,2);assert.equal(out.contentMode,'data-only');assert.deepEqual(out.players,m.players);
+assert(!('commentary' in out));assert(!('honors' in out));assert.doesNotMatch(out.text,/司机|救护车|答辩|规则榜/);
+const split={...data,matches:[{...data.matches[1],players:[{...data.matches[1].players[0],role:'JUNGLE',review:'DO-NOT-EXPORT-REVIEW',puuid:'DO-NOT-EXPORT-ID'}]},{...data.matches[2],players:[{...data.matches[2].players[0],role:'UTILITY',gd15:100,damageTaken:10000,healing:500,cc:30}]}]};
+const splitModel=C.model(split,split.matches,{period:'2026-10-13'}),a=splitModel.players[0];assert.equal(a.byRole.length,2);
+assert.equal(a.byRole.find(r=>r.role==='JUNGLE').dpm,100);assert.equal(a.byRole.find(r=>r.role==='UTILITY').dpm,200);assert.equal(a.dpm,5000/30);
+assert.equal(a.gd15,100);assert.equal(a.coverage.gd15,1);assert.equal(a.damageTakenPerMinute,500);assert.equal(a.coverage.damageTaken,1);
+assert.equal(splitModel.games.length,2);assert.equal(splitModel.games[0].players[0].champion,'英雄');assert.equal(splitModel.games[0].players[0].healing,null);
+assert.equal(splitModel.games[1].players[0].gd15,100);assert.equal(splitModel.games[1].players[0].damageTaken,10000);
+assert.doesNotMatch(JSON.stringify(splitModel),/DO-NOT-EXPORT|"review"|"puuid"/);
+const bot=C.botData(C.payload(splitModel));assert.equal(bot.schemaVersion,2);assert.equal(bot.contentMode,'data-only');assert.equal(bot.players.length,1);assert.equal(bot.players[0].byRole.length,2);assert.equal(bot.games.length,2);assert.equal(bot.players[0].dpm,166.6667);
+assert(!('text' in bot));assert(!('segments' in bot));assert(!('commentary' in bot));assert(!('honors' in bot));assert(!('sourceUpdatedAt' in bot));assert(bot.metrics.roles);assert(C.BOT_PROMPT.includes('players.byRole'));assert(C.BOT_PROMPT.includes('null'));
+const dual={...data,matches:[{...data.matches[1],players:[p('a',true,1000),p('b',false,500)]}]};const personal=C.model(dual,dual.matches,{period:'2026-10-13',player:'a'});assert.equal(personal.appearances,1);assert.deepEqual(personal.games[0].players.map(p=>p.key),['a']);
+const missing={...data,matches:[{...data.matches[1],players:[{...p('a',true,0),damage:null,teamDamage:5000}]},data.matches[2]]};const partial=C.model(missing,missing.matches,{period:'2026-10-13'});assert.equal(partial.players[0].dpm,200);assert.equal(partial.players[0].damageShare,.2);assert.equal(partial.players[0].coverage.damage,1);assert.equal(partial.players[0].gd15,null);assert.equal(partial.players[0].coverage.gd15,0);
+const empty=C.model(data,data.matches,{kind:'daily',period:'2026-11-01'});assert.match(C.text(empty),/暂无已入库对局/);assert.deepEqual(C.botData(empty).games,[]);assert.deepEqual(C.botData(empty).players,[]);
 const newYear=C.model(data,[],{kind:'weekly',period:'2026-12-28'});assert.match(C.text(newYear),/2026-12-28～2027-01-03/);
-console.log(JSON.stringify({fourAMBoundary:true,mondayFourAM:true,weightedMinutes:true,dedup:true,personalOutcomes:true,segments:true,compactText:true,noSnapshot:true,stableReload:true,rotatingDailyAndWeekly:true,noRepeatedJokesPerIssue:true,roleAware:true,missingScoreAndTimeline:true,emptyAndNewYear:true}));
+console.log(JSON.stringify({fourAMBoundary:true,mondayFourAM:true,weightedMinutes:true,dedup:true,personalOutcomes:true,segments:true,dataOnly:true,noSnapshotInText:true,byRole:true,individualGames:true,nullCoverage:true,compactBotData:true,noExportedReviewsOrPrivateFields:true,emptyAndNewYear:true}));

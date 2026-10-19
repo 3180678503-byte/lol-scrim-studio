@@ -245,7 +245,7 @@ GitHub Pages 使用 `main` 分支根目录 `/`，`.nojekyll` 禁用 Jekyll，不
 
 两套灵排有“日报 / 周报”，支持群聊简版、完整面板、按玩家选择、复制文字、下载 TXT/JSON。日报为北京时间 04:00 到次日 04:00，周报为周一 04:00 到下周一 04:00；按对局开始时间归属。
 
-机器人可直接读取[好友全量日报 TXT](friends/reports/latest-daily.txt)、[好友全量周报 TXT](friends/reports/latest-weekly.txt)；同路径的 `.json` 包含 text 与每段最多 1800 字的 segments。latest 指向最新有数据且已结束的周期，当前周期使用 current 链接。
+已接入 GPT 的机器人可读取[好友全量日报纯数据](friends/reports/latest-daily.bot.json)、[周报纯数据](friends/reports/latest-weekly.bot.json)，配合[点评提示词](friends/reports/bot-prompt.txt)生成群聊战报。数据含全期、分位置汇总和逐场英雄/战绩，不预先写评语。也保留[日报 TXT](friends/reports/latest-daily.txt)、[周报 TXT](friends/reports/latest-weekly.txt)；普通 `.json` 包含纯数据文字 text 与每段最多 1800 字的 segments。latest 指向最新有数据且已结束的周期，当前周期使用 current 链接。
 
 朋友操作、API 存储、全部机器人链接、更新命令和测试见[评分与报表说明](docs/community-and-reports.md)。新增数据后运行 `node tools/build-community-manifest.cjs` 和 `node tools/export-flex-reports.cjs` 再构建、发布。
 
