@@ -143,7 +143,12 @@ def main():
             if not args.prepare_only:
                 for rel in changed:(site/rel).parent.mkdir(parents=True,exist_ok=True);shutil.copy2(stage/rel,site/rel)
             if args.publish and changed:
-                git('add','--',*[str(rel).replace('\\','/') for rel in changed])
+                # All historical reports are regenerated together. Their file
+                # list can exceed Windows' command-line limit, so Git reads
+                # the exact UTF-8, NUL-delimited paths from a private file.
+                pathspec=run_dir/'publish-paths.nul'
+                pathspec.write_bytes(b''.join(str(rel).replace('\\','/').encode('utf-8')+b'\0' for rel in changed))
+                git('add','--pathspec-from-file='+str(pathspec),'--pathspec-file-nul')
                 git('diff','--cached','--check')
                 git('commit','-m','Update friends flex day '+day)
                 # Rebase only this validated commit if a collaborator pushed meanwhile.
