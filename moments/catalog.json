@@ -9496,6 +9496,26 @@
   },
   "items": [
     {
+      "id": "d19f092a-5c31-4f18-a8fa-55b3f373b1a7",
+      "uploaderKey": "无人之海#80858",
+      "title": "薇古丝团战进场毁天灭地",
+      "description": "",
+      "category": "highlight",
+      "players": [
+        "无人之海#80858"
+      ],
+      "matchKey": null,
+      "occurredOn": null,
+      "hero": "",
+      "duration": 97.871995,
+      "createdAt": 1792731156236,
+      "archive": {
+        "state": "submitted",
+        "bvid": null
+      },
+      "posterPath": "covers/d19f092a-5c31-4f18-a8fa-55b3f373b1a7.jpg"
+    },
+    {
       "id": "edd3418a-eb0f-44d6-977a-2bf8b38f4078",
       "uploaderKey": "无人之海#80858",
       "title": "薇古丝VS卡特一打二双杀 #中野决裂",
@@ -9510,8 +9530,8 @@
       "duration": 33.420333,
       "createdAt": 1792730549760,
       "archive": {
-        "state": "submitted",
-        "bvid": null
+        "state": "ready",
+        "bvid": "BV1MGn46kE9A"
       },
       "posterPath": "covers/edd3418a-eb0f-44d6-977a-2bf8b38f4078.jpg"
     },
