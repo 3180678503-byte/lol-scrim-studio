@@ -9496,6 +9496,26 @@
   },
   "items": [
     {
+      "id": "edd3418a-eb0f-44d6-977a-2bf8b38f4078",
+      "uploaderKey": "无人之海#80858",
+      "title": "薇古丝VS卡特一打二双杀 #中野决裂",
+      "description": "",
+      "category": "highlight",
+      "players": [
+        "无人之海#80858"
+      ],
+      "matchKey": null,
+      "occurredOn": null,
+      "hero": "",
+      "duration": 33.420333,
+      "createdAt": 1792730549760,
+      "archive": {
+        "state": "submitted",
+        "bvid": null
+      },
+      "posterPath": "covers/edd3418a-eb0f-44d6-977a-2bf8b38f4078.jpg"
+    },
+    {
       "id": "fe1d1ae7-bc35-407c-85d6-8b18586c5fd5",
       "uploaderKey": "G30a#71755",
       "title": "我咬我再咬",
