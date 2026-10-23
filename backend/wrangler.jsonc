@@ -3,6 +3,7 @@
  "main":"worker.mjs",
  "compatibility_date":"2026-10-14",
  "workers_dev":true,
+ "triggers":{"crons":["*/2 * * * *"]},
  "vars":{"ALLOWED_ORIGINS":"https://3180678503-byte.github.io","MANIFEST_URL":"https://3180678503-byte.github.io/lol-scrim-studio/backend/manifest.json"},
  "d1_databases":[{"binding":"DB","database_name":"lol-scrim-community","database_id":"00000000-0000-0000-0000-000000000000"}]
 }

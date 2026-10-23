@@ -1,5 +1,6 @@
 import Core from '../community-core.js';
 import manifest from './manifest.json' with {type:'json'};
+import {predictionRoute,syncPredictions} from './predictions.mjs';
 let cachedCatalog=null,catalogExpires=0;
 async function catalogFor(env){
  if(!env.MANIFEST_URL)return manifest;if(cachedCatalog&&Date.now()<catalogExpires)return cachedCatalog;
@@ -13,15 +14,17 @@ async function reviews(db,target,catalog=manifest){
  return {targetId:id,mean:validVotes.length?validVotes.reduce((n,v)=>n+v.stars,0)/validVotes.length:null,voteCount:validVotes.length,histogram,votes:validVotes.map(v=>({raterKey:v.rater_key,name:members.get(v.rater_key),stars:v.stars,updatedAt:new Date(v.updated_at).toISOString()})),comments:validComments.map(c=>({id:c.id,raterKey:c.rater_key,name:members.get(c.rater_key),comment:c.body,createdAt:new Date(c.created_at).toISOString()})),commentCount:total.results[0].total};
 }
 export default {
+ async scheduled(event,env,ctx){ctx.waitUntil(syncPredictions(env));},
  async fetch(request,env){
   const origin=request.headers.get('Origin'),allowed=(env.ALLOWED_ORIGINS||'https://3180678503-byte.github.io').split(',').map(s=>s.trim()),cors=origin&&allowed.includes(origin)?{'Access-Control-Allow-Origin':origin,'Vary':'Origin'}:{};
   const response=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store',...cors}});
   if(origin&&!allowed.includes(origin))return response({error:'此来源无法提交或读取评分'},403);
-  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{...cors,'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'86400'}});
+  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{...cors,'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Prediction-Key','Access-Control-Max-Age':'86400'}});
   const url=new URL(request.url);
   const catalog=await catalogFor(env);
   if(request.method==='GET'&&url.pathname==='/health')return response({ok:true,schemaVersion:1,members:catalog.members.length});
   try{
+   if(url.pathname==='/predictions')return response(await predictionRoute(request,env,catalog));
    if(request.method==='GET'&&url.pathname==='/reviews')return response(await reviews(env.DB,targetFrom(url),catalog));
    if(request.method==='POST'&&url.pathname==='/entries'){
     if(!request.headers.get('content-type')?.startsWith('application/json'))return response({error:'需要 JSON 请求'},415);
@@ -36,7 +39,7 @@ export default {
     await env.DB.batch(statements);return response(await reviews(env.DB,entry.target,catalog),201);
    }
    return response({error:'没有这个接口'},404);
-  }catch(e){if(e.message?.includes('D1')||e.message?.includes('SQLITE'))return response({error:'评分存储暂时不可用，请稍后重试'},503);return response({error:e.message||'提交失败'},400);}
+  }catch(e){if(e.message?.includes('D1')||e.message?.includes('SQLITE'))return response({error:'数据存储暂时不可用，请稍后重试'},503);return response({error:e.message||'提交失败'},e.status||400);}
  }
 };
 export {reviews};
