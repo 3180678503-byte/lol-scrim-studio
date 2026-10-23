@@ -8,22 +8,33 @@ export function parseOfficialPage(html) {
     if (!script.includes('ApolloSSRDataTransport')) continue;
     // Apollo includes megabytes of unrelated cached fields. Extract only complete
     // EventMatch objects to stay within a scheduled Worker's CPU budget.
-    const starts = /\{\s*"__typename"\s*:\s*"EventMatch"\s*,/g;
+    const starts = [...script.matchAll(/\{\s*"__typename"\s*:\s*"EventMatch"\s*,/g)];
+    if(starts.length>1000)throw new Error('官方比赛数量异常');
     const tokens = /"(?:\\.|[^"\\])*"|[{}]/g;
-    let found, count = 0;
-    while ((found = starts.exec(script))) {
-      if (++count > 1000) throw new Error('官方比赛数量异常');
-      const start = found.index; tokens.lastIndex = start;
+    const json = text => JSON.parse(text.includes('undefined') ? text.replace(/"(?:\\.|[^"\\])*"|\bundefined\b/g, token => token === 'undefined' ? 'null' : token) : text);
+    for(let i=0;i<starts.length;i++) {
+      const start = starts[i].index;
+      // Match.strategy precedes the large games/VOD payload. Parse the complete
+      // JSON prefix through strategy, closing only its match and event objects.
+      // If upstream changes field order, use the full balanced-object reader.
+      const prefix=script.slice(start,Math.min(starts[i+1]?.index||script.length,start+20000));
+      // The page serializes the same normalized event again with reordered keys.
+      // Retain the first complete official record and skip that duplicate cache.
+      const headerId=prefix.slice(0,220).match(/"id"\s*:\s*"(\d+)"/)?.[1];
+      if(headerId&&events.has(headerId))continue;
+      const games=prefix.search(/,\s*"games"\s*:/);
+      if(games>=0){
+        try{const event=json(prefix.slice(0,games)+'}}');if(event.match?.strategy){events.set(event.id,event);continue;}}catch{}
+      }
+      tokens.lastIndex = start;
       let depth = 0, end = -1, token;
       while ((token = tokens.exec(script))) {
         if (token[0] === '{') depth++;
         else if (token[0] === '}' && --depth === 0) { end = tokens.lastIndex; break; }
       }
       if (end < 0) throw new Error('官方页面数据不完整');
-      const serialized = script.slice(start, end).replace(/"(?:\\.|[^"\\])*"|\bundefined\b/g, token => token === 'undefined' ? 'null' : token);
-      const event = JSON.parse(serialized);
+      const event = json(script.slice(start, end));
       events.set(event.id,event);
-      starts.lastIndex = end;
     }
   }
   const worlds = [...events.values()].filter(e => e.league?.slug === 'worlds' && /^\d{4}$/.test(e.tournament?.name));

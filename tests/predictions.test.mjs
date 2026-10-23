@@ -65,6 +65,16 @@ async function test(){
  const raw={__typename:'EventMatch',id:'999999999999',startTime:new Date(now+3600000).toISOString(),state:'completed',blockName:'Swiss',league:{slug:'worlds'},tournament:{id:'x',name:'2026'},matchTeams:[{teamId:'100',code:'AAA',name:'undefined literal',image:'javascript:alert(1)',result:{gameWins:1,outcome:'win'}},{teamId:'200',code:'BBB',result:{gameWins:1,outcome:'loss'}}],match:{state:'completed',strategy:{count:3}}};
  const html='<script>(window[Symbol.for("ApolloSSRDataTransport")]??=[]).push('+JSON.stringify({rehydrate:{events:[raw,raw]}}).replace('"rehydrate":','"unused":undefined,"rehydrate":')+')</script>';
  const parsed=parseOfficialPage(html);assert.equal(parsed.length,1);assert.equal(parsed[0].winnerId,null);assert.equal(parsed[0].teams[0].name,'undefined literal');assert.equal(parsed[0].teams[0].image,'');assert.throws(()=>parseOfficialPage('<script>alert(1)</script>'),/未找到/);
+ const pageFor=event=>'<script>(window[Symbol.for("ApolloSSRDataTransport")]??=[]).push('+JSON.stringify({events:[event]})+')</script>';
+ const withGames={...raw,match:{state:'completed',strategy:{count:3},games:[{vods:[{label:'} quoted brace { and \\"'}]}]}};
+ assert.deepEqual(parseOfficialPage(pageFor(withGames)),parsed,'prefix optimization must preserve every normalized field');
+ const reordered={...raw,match:{games:withGames.match.games,strategy:{count:3},state:'completed'}};
+ assert.deepEqual(parseOfficialPage(pageFor(reordered)),parsed,'reordered upstream keys use safe balanced fallback');
+ const early=fixture('555555555555',3,now+20000000);await storeEvents(DB,[early],now+10000);await storeEvents(DB,[{...early,state:'inProgress'}],now+10001);
+ await assert.rejects(submitPrediction(DB,cat,body(early),key,now+10002),/封盘/,'official early starts must close voting');
+ const future=fixture('666666666666',3,now+20000000);await storeEvents(DB,[future],now+11000);await submitPrediction(DB,cat,body(future),key,now+11000);
+ const updated={...future,signature:'100:300:3',teams:[future.teams[0],{...future.teams[1],id:'300'}]};await storeEvents(DB,[updated],now+12000);await submitPrediction(DB,cat,body(updated,a,'300',1),key,now+12000);
+ assert.equal((await DB.prepare('SELECT signature FROM predictions WHERE event_id=?').bind(future.id).first()).signature,updated.signature,'new opponents can be re-predicted before lock');
  const before=(await DB.prepare('SELECT success_at FROM prediction_sync').first()).success_at;
  await syncPredictions({DB},now+2000000,async()=>new Response('bad',{status:500}));assert.equal((await DB.prepare('SELECT success_at FROM prediction_sync').first()).success_at,before);
  const env={DB,ALLOWED_ORIGINS:'https://3180678503-byte.github.io'};

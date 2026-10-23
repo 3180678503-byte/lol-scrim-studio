@@ -27,6 +27,8 @@ export async function syncPredictions(env, now = Date.now(), fetcher = fetch) {
   // Poll every two minutes near matches; otherwise every eight minutes.
   const active = await db.prepare("SELECT id FROM prediction_events WHERE state='inProgress' OR (state='unstarted' AND start_at BETWEEN ? AND ?) LIMIT 1").bind(now - 3600000,now + 3600000).first();
   if (sync && now - sync.attempted_at < (active || sync.error ? 100000 : 480000)) return;
+  await db.prepare(`INSERT INTO prediction_sync(id,attempted_at) VALUES(1,?)
+    ON CONFLICT(id) DO UPDATE SET attempted_at=excluded.attempted_at`).bind(now).run();
   try { await storeEvents(db, await fetchOfficial(fetcher), now); }
   catch (error) {
     console.error('Official prediction schedule sync failed:', error.message);
