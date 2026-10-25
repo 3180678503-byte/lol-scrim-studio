@@ -1,5 +1,5 @@
 """Bounded, read-only LCU/SGP collection; authentication never leaves memory/files."""
-import argparse, base64, datetime, json, os, re, ssl, subprocess, urllib.request, urllib.error, urllib.parse
+import argparse, base64, datetime, http.client, json, os, re, ssl, subprocess, urllib.request, urllib.error, urllib.parse
 from pathlib import Path
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -16,7 +16,7 @@ def read(client, url, auth):
             return json.load(r)
     except urllib.error.HTTPError as e:
         raise RuntimeError('HTTP ' + str(e.code)) from None
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         raise RuntimeError('Connection or JSON error') from None
 
 def connection_credentials(lockfile=None):

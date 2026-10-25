@@ -25,6 +25,18 @@ def period_window(day=None,now=None,last_success=None):
         collect_from=min(collect_from,previous)
     return start,end,parse_window(collect_from.isoformat(),end.isoformat())
 
+def create_publish_checkout(source,target,git_executable,remote,run):
+    """Publish committed source in a private checkout; leave pending edits alone."""
+    run([git_executable,'clone','--shared','--no-checkout',source,target],
+        'prepare isolated publishing checkout',cwd=source)
+    run([git_executable,'-C',target,'remote','set-url','origin',remote],
+        'configure isolated publishing remote',cwd=source)
+    for key in ['user.name','user.email']:
+        value=run([git_executable,'-C',source,'config','--get',key],
+            'read publishing identity',cwd=source)
+        run([git_executable,'-C',target,'config',key,value],
+            'configure publishing identity',cwd=source)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--site',default=str(ROOT));p.add_argument('--private-root',required=True);p.add_argument('--roster')
@@ -41,7 +53,7 @@ def main():
     if not 15<=args.client_wait_seconds<=600:p.error('client-wait-seconds must be 15..600')
     if not 1<=args.close_notice_seconds<=600:p.error('close-notice-seconds must be 1..600')
     if args.close_after_notice and not args.auto_launch:p.error('close-after-notice requires client lifecycle management via auto-launch')
-    site=Path(args.site).resolve();private=Path(args.private_root).resolve();roster=Path(args.roster).resolve() if args.roster else private/'friend-roster-current.json'
+    site=Path(args.site).resolve();source_site=site;private=Path(args.private_root).resolve();roster=Path(args.roster).resolve() if args.roster else private/'friend-roster-current.json'
     if private==site or site in private.parents:p.error('Private output must be outside the public repository')
     state_file=private/'daily/state.json'
     previous=json.loads(state_file.read_text(encoding='utf-8')).get('lastSuccessfulDay') if state_file.exists() and not args.input else None
@@ -78,7 +90,6 @@ def main():
     try:
         if args.publish:
             if not args.git or not args.gh:raise RuntimeError('Git or GitHub CLI unavailable')
-            if git('status','--porcelain'):raise RuntimeError('Working tree has uncommitted changes; preserve them and retry after review')
             remote=git('remote','get-url','origin');parsed=urllib.parse.urlparse(remote)
             if parsed.scheme!='https' or parsed.hostname!='github.com' or parsed.username or parsed.password:raise RuntimeError('Expected a plain GitHub HTTPS remote')
             token_result=subprocess.run([args.gh,'auth','token','--hostname','github.com'],capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -86,8 +97,10 @@ def main():
             token=token_result.stdout.strip();header='AUTHORIZATION: basic '+base64.b64encode(('x-access-token:'+token).encode()).decode()
             secret_values=[token,header];auth_env.update(SCRIM_DAILY_AUTH_HEADER=header,GIT_TERMINAL_PROMPT='0',GH_TOKEN=token)
             def git_network(*arguments):return git('-c','credential.helper=','--config-env=http.'+remote+'.extraHeader=SCRIM_DAILY_AUTH_HEADER',*arguments)
-            if git('branch','--show-current')!='main':raise RuntimeError('Daily publishing requires the main branch')
-            git_network('pull','--ff-only','origin','main')
+            publish_site=run_dir/'publish-site'
+            create_publish_checkout(source_site,publish_site,args.git,remote,run)
+            site=publish_site;record['publishSite']=str(site);write(run_dir/'result.json',record)
+            git_network('fetch','origin','main');git('checkout','--detach','origin/main')
             base_head=git('rev-parse','HEAD')
         scripts=site/'skills/lol-scrim-update/scripts'
         capture=run_dir/'cohort.json';report=run_dir/'collection-report.json'
@@ -105,7 +118,7 @@ def main():
                 record['clientSession']=session.events;write(run_dir/'result.json',record)
                 session.open()
             try:
-                run([sys.executable,scripts/'collect_friends_flex.py','--roster',roster,'--output',capture,'--report',report,'--timeline-cache',private/'cohort-timelines','--since',window['start'],'--until',window['end'],'--max-per-account','1000','--workers','4'],'collect current flex window')
+                run([sys.executable,scripts/'collect_friends_flex.py','--roster',roster,'--output',capture,'--report',report,'--timeline-cache',private/'cohort-timelines','--since',window['start'],'--until',window['end'],'--max-per-account','1000','--page-size','20','--workers','2'],'collect current flex window')
             finally:
                 if session:session.close();write(run_dir/'result.json',record)
         raw=json.loads(capture.read_text(encoding='utf-8'));collection=json.loads(report.read_text(encoding='utf-8'))
@@ -152,7 +165,7 @@ def main():
                 git('diff','--cached','--check')
                 git('commit','-m','Update friends flex day '+day)
                 # Rebase only this validated commit if a collaborator pushed meanwhile.
-                git_network('fetch','origin','main');git('rebase','origin/main');git_network('push','origin','main')
+                git_network('fetch','origin','main');git('rebase','origin/main');git_network('push','origin','HEAD:main')
                 commit=git('rev-parse','HEAD');record['commit']=commit
                 repo=remote.removesuffix('.git').removeprefix('https://github.com/')
                 import time
@@ -175,6 +188,17 @@ def main():
                     public_keys={m['matchKey'] for m in public['matches']}
                     if not expected_keys<=public_keys or len(public_keys)!=len(public['matches']):raise RuntimeError('Published data is incomplete or duplicated')
                 record['website']=base+'friends/'
+                # Refresh the ordinary checkout only if Git can preserve its
+                # unrelated edits. A local conflict must not undo a verified
+                # publication or cause the same games to be collected forever.
+                mirror=subprocess.run([args.git,'-C',source_site,'fetch',str(site),'HEAD'],capture_output=True,text=True,encoding='utf-8',errors='replace',creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                if mirror.returncode==0:
+                    branch=subprocess.run([args.git,'-C',source_site,'branch','--show-current'],capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                    if branch.stdout.strip()=='main':
+                        mirror=subprocess.run([args.git,'-C',source_site,'merge','--ff-only','FETCH_HEAD'],capture_output=True,text=True,encoding='utf-8',errors='replace',creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                        record['localCheckoutRefreshed']=mirror.returncode==0
+                    else:record['localCheckoutRefreshed']=False
+                else:record['localCheckoutRefreshed']=False
             record['status']='prepared' if args.prepare_only else 'published' if args.publish and changed else 'no-public-changes' if args.publish else 'updated-locally'
         write(run_dir/'result.json',record);write(daily/'latest-result.json',record)
         if args.publish:write(daily/'state.json',{'lastSuccessfulDay':day,'lastSuccessfulRun':run_id,'updatedAt':dt.datetime.now(ZONE).isoformat()})

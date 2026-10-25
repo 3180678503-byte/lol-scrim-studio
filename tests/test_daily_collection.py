@@ -1,4 +1,5 @@
-import importlib.util,sys,unittest
+import http.client,importlib.util,shutil,subprocess,sys,tempfile,unittest
+from unittest.mock import MagicMock
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'skills/lol-scrim-update/scripts'))
@@ -7,6 +8,41 @@ spec=importlib.util.spec_from_file_location('cohort_to_flex',ROOT/'tools/cohort_
 daily_spec=importlib.util.spec_from_file_location('run_daily_flex',ROOT/'tools/run_daily_flex.py');daily=importlib.util.module_from_spec(daily_spec);daily_spec.loader.exec_module(daily)
 
 class DailyCollection(unittest.TestCase):
+    def test_truncated_response_is_retryable(self):
+        import collect
+        client=MagicMock()
+        response=client.open.return_value.__enter__.return_value
+        response.read.side_effect=http.client.IncompleteRead(b'partial')
+        with self.assertRaisesRegex(RuntimeError,'Connection or JSON error'):
+            collect.read(client,'https://example.test/history','test')
+        with self.assertRaisesRegex(RuntimeError,'Connection or JSON error'):
+            client.open.side_effect=http.client.RemoteDisconnected('closed')
+            collect.read(client,'https://example.test/history','test')
+
+    def test_isolated_publish_preserves_dirty_source(self):
+        git=shutil.which('git')
+        if not git:self.skipTest('git unavailable')
+        def run(args,label='',cwd=None):
+            return subprocess.run([str(a) for a in args],cwd=cwd,check=True,capture_output=True,text=True).stdout.strip()
+        with tempfile.TemporaryDirectory() as temp:
+            source=Path(temp)/'source';target=Path(temp)/'private-publish'
+            source.mkdir();run([git,'init',source])
+            for key,value in [('user.name','Test'),('user.email','test@example.test')]:
+                run([git,'-C',source,'config',key,value])
+            (source/'data.txt').write_text('committed')
+            run([git,'-C',source,'add','.']);run([git,'-C',source,'commit','-m','initial'])
+            (source/'data.txt').write_text('pending edit')
+            (source/'draft.txt').write_text('private draft')
+            before=run([git,'-C',source,'status','--porcelain'])
+            daily.create_publish_checkout(source,target,git,'https://github.com/example/test.git',run)
+            run([git,'-C',target,'checkout','--detach','HEAD'])
+            self.assertEqual((target/'data.txt').read_text(),'committed')
+            self.assertFalse((target/'draft.txt').exists())
+            self.assertEqual(run([git,'-C',target,'status','--porcelain']),'')
+            self.assertEqual(run([git,'-C',target,'config','user.name']),'Test')
+            self.assertEqual(run([git,'-C',source,'status','--porcelain']),before)
+            self.assertEqual((source/'data.txt').read_text(),'pending edit')
+
     def test_last_completed_business_day(self):
         import datetime as dt
         start,end,window=daily.period_window(now=dt.datetime(2026,10,15,4,0,tzinfo=daily.ZONE))

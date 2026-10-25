@@ -7,11 +7,12 @@ from collect_flex import write
 from collection_window import parse_window,in_window,before_window
 
 def main():
-    a=argparse.ArgumentParser(description=__doc__);a.add_argument('--roster',required=True);a.add_argument('--output',required=True);a.add_argument('--report',required=True);a.add_argument('--timeline-cache',required=True);a.add_argument('--reuse');a.add_argument('--max-per-account',type=int,default=1000);a.add_argument('--workers',type=int,default=4)
+    a=argparse.ArgumentParser(description=__doc__);a.add_argument('--roster',required=True);a.add_argument('--output',required=True);a.add_argument('--report',required=True);a.add_argument('--timeline-cache',required=True);a.add_argument('--reuse');a.add_argument('--max-per-account',type=int,default=1000);a.add_argument('--page-size',type=int,default=100);a.add_argument('--workers',type=int,default=4)
     a.add_argument('--since');a.add_argument('--until');args=a.parse_args()
     try:window=parse_window(args.since,args.until)
     except ValueError as e:a.error(str(e))
     if not 1<=args.max_per_account<=1000 or not 1<=args.workers<=4:a.error('max-per-account 1..1000; workers 1..4')
+    if not 1<=args.page_size<=100:a.error('page-size 1..100')
     if Path(args.output).exists():a.error('Choose a new timestamped private output')
     roster=json.loads(Path(args.roster).read_text(encoding='utf-8'));requested={f['puuid'] for f in roster['selected']}
     port,pw=collect.credentials();local=collect.opener(True);basic='Basic '+base64.b64encode(('riot:'+pw).encode()).decode()
@@ -42,8 +43,8 @@ def main():
         if cached.exists():
             value=json.loads(cached.read_text(encoding='utf-8'));return t,value['games'],value['info']
         games=[];seen=set();pages=[];stop='max_games';error=None;excluded=0
-        for start in range(0,args.max_per_account,100):
-            count=min(100,args.max_per_account-start)
+        for start in range(0,args.max_per_account,args.page_size):
+            count=min(args.page_size,args.max_per_account-start)
             path='/match-history-query/v1/products/lol/player/'+t['puuid']+'/SUMMARY?'+urllib.parse.urlencode({'startIndex':start,'count':count,'tag':'q_440'})
             try:payload=get(path)
             except RuntimeError as e:error=str(e);stop='error';break
