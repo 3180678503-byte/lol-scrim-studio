@@ -31,8 +31,10 @@ function renderMembers(){
  if(!$('filter-player').value)state.filterPlayer='';
  $('login-player').innerHTML='<option value="">请选择</option>'+options;$('login-player').value=session?.playerKey||'';
  $('upload-players').innerHTML=state.members.map(p=>`<label><input type="checkbox" name="players" value="${esc(p.key)}"><span>${esc(p.name)}</span></label>`).join('');
- $('upload-match').innerHTML='<option value="">不关联比赛 / 记不清了</option>'+Object.entries(state.matches).sort((a,b)=>String(b[1].createdAt).localeCompare(String(a[1].createdAt))).map(([key,m])=>`<option value="${esc(key)}">${esc(m.date)} ${esc(m.start)} · ${esc(m.label)}</option>`).join('');
+ renderMatchOptions();
 }
+function renderMatchOptions(){const select=$('upload-match'),selected=select.value;select.innerHTML='<option value="">不关联比赛 / 记不清了</option>'+Object.entries(state.matches).sort((a,b)=>String(b[1].createdAt).localeCompare(String(a[1].createdAt))).map(([key,m])=>`<option value="${esc(key)}">${esc(m.date)} ${esc(m.start)} · ${esc(m.label)}</option>`).join('');select.value=Object.hasOwn(state.matches,selected)?selected:'';}
+async function refreshMatches(){const response=await fetch('../backend/manifest.json',{cache:'no-cache',signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error('比赛清单暂时无法读取');const catalog=await response.json();if(catalog.schemaVersion!==1||!catalog.matchMeta||typeof catalog.matchMeta!=='object'||Array.isArray(catalog.matchMeta))throw Error('比赛清单格式不正确');state.matches=catalog.matchMeta;renderMatchOptions();}
 async function refreshUsage(){$('storage-label').textContent='本站只保留封面与目录 · 视频、点赞和评论在 B站';$('storage-bar').parentElement.hidden=true;}
 function card(item){
  const url=window.MOMENTS_DIRECTORY.videoURL(item),poster=item.posterPath;
@@ -59,7 +61,7 @@ async function loadGallery(append=false){
  finally{state.loading=false;$('load-more').disabled=false;}
 }
 function needSession(){if(session&&session.expiresAt>Date.now())return true;$('login-error').textContent='';$('login-dialog').showModal();return false;}
-function openUpload(){if(!state.storageReady){toast('视频空间暂未开通，暂不能上传');return;}if(!needSession())return;for(const input of $('upload-players').querySelectorAll('input'))if(![...$('upload-players').querySelectorAll('input')].some(x=>x.checked)&&input.value===session.playerKey)input.checked=true;$('upload-error').textContent='';$('upload-dialog').showModal();}
+function openUpload(){if(!state.storageReady){toast('视频空间暂未开通，暂不能上传');return;}if(!needSession())return;for(const input of $('upload-players').querySelectorAll('input'))if(![...$('upload-players').querySelectorAll('input')].some(x=>x.checked)&&input.value===session.playerKey)input.checked=true;$('upload-error').textContent='';$('upload-dialog').showModal();refreshMatches().catch(()=>toast('比赛清单暂时无法刷新，可选择已有比赛或不关联'));}
 async function openWatch(id){const item=(await readDirectory()).items.find(m=>m.id===id),url=item&&window.MOMENTS_DIRECTORY.videoURL(item);if(url)location.replace(url);else toast('视频正在等待 B站投稿或审核');}
 function resetFile(){if(state.fileURL)URL.revokeObjectURL(state.fileURL);state.fileURL=null;state.file=null;state.duration=0;$('upload-preview').pause();$('upload-preview').removeAttribute('src');$('upload-preview').load();$('upload-preview').hidden=true;}
 $('upload-file').onchange=async()=>{
@@ -93,7 +95,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(b.dataset
 $('upload-dialog').addEventListener('cancel',e=>{if(state.uploading){e.preventDefault();toast('视频正在上传，请等待完成');}});
 $('open-admin').onclick=()=>$('admin-dialog').showModal();$('admin-form').onsubmit=e=>{e.preventDefault();state.adminKey=$('admin-key').value;$('admin-key').value='';$('admin-dialog').close();renderGallery();toast('管理口令已用于本次会话，删除时会校验');};
 async function init(){renderMembers();renderSession();try{const c=await readDirectory();state.members=c.members;state.matches=c.matches||{};state.storageReady=!!api;window.MOMENTS_ARCHIVE.setup(true);if(session&&!state.members.some(p=>p.key===session.playerKey)){session=null;save(SESSION_KEY,null);}renderMembers();renderSession();if(!state.storageReady){$('service-note').textContent='视频空间正在准备，暂不能上传。开通后即可在这里发布名场面。';$('service-note').hidden=false;}}catch{$('service-note').textContent='暂时无法连接名场面服务，请稍后刷新。';$('service-note').hidden=false;}
- await Promise.all([loadGallery(),refreshUsage()]);if(query.get('clip'))await openWatch(query.get('clip'));
+ await Promise.all([loadGallery(),refreshUsage(),refreshMatches().catch(()=>{})]);if(query.get('clip'))await openWatch(query.get('clip'));
 }
 init();
 })();
