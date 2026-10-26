@@ -256,3 +256,8 @@ GitHub Pages 使用 `main` 分支根目录 `/`，`.nojekyll` 禁用 Jekyll，不
 ## 国内入口迁移
 
 已提供可迁移的 Node.js 24 + SQLite 服务，网站、上传和比赛评分使用同一域名，封面目录由本地数据库生成。迁移步骤见 [国内部署说明](server/DEPLOY.md)。打包命令：`python tools/package-domestic-site.py --output <部署包.zip>`。部署包不含视频、数据库备份或密钥。现有 GitHub Pages 保持可用，新的国内入口需完成云资源与域名设置后上线。
+
+
+## 位置职责评分 v2
+
+排行榜、五维雷达、复盘、日报/周报使用统一评分，按位置与英雄职责区分权重。单局表现分与小样本收缩榜分分别显示；旧分在排行和复盘中对照。参见[评分公式、重算与回退](docs/scoring-v2.md)。采集后的 Python review/build 会调用同一个 Node 引擎，协作者需安装 Node.js，或将 `SCRIM_NODE` 设为其可执行文件路径。

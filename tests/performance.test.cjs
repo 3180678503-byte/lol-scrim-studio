@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-global.window={};
+global.window={SCORE_CORE:require('../score-core.js')};
 require('../radar.js');require('../friend-radar.js');
 window.FLEX_REPORT_CORE=require('../report-core.js');
 require('../performance.js');

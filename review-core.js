@@ -31,6 +31,10 @@ function reference(data,m,p,mode){
 }
 function lowerBound(a,x,upper=false){let lo=0,hi=a.length;while(lo<hi){const mid=(lo+hi)>>1;if(a[mid]<x||upper&&a[mid]===x)lo=mid+1;else hi=mid;}return lo;}
 function calibrated(data,m,p,mode='role'){
+ const shared=typeof module==='object'&&module.exports?require('./score-core.js'):globalThis.SCORE_CORE;
+ return {...shared.score(data,m,p),mode:'unified'};
+}
+function legacyCalibrated(data,m,p,mode='role'){
  const config=CONFIG[p.role];if(!config)return {score:null,coverage:0,axes:[],samples:0,patch:patch(m),mode,role:p.role};
  const pool=reference(data,m,p,mode),included=pool.rows.some(r=>r.match.matchKey===m.matchKey&&r.player.id===p.id),axes=[];
  for(const [key,weight] of Object.entries(config)){
@@ -90,5 +94,5 @@ function review(m,p){
  else if(poolGood.length){title='团战签到员';roast='本队多数人头都有你的签名，至少这把团战点名不用替你答到。';}
  return {title,roast,evidence,followups:followups.length,objectiveDeaths:before.length,coverage:m.reviewTimeline?.coverage||null,phases:p.reviewPhases||[]};
 }
-return {ROLES,CONFIG,METRICS,patch,time,signed,value,calibrated,events,eventName,frameRows,turningPoints,review,mean};
+return {ROLES,CONFIG,METRICS,patch,time,signed,value,calibrated,legacyCalibrated,events,eventName,frameRows,turningPoints,review,mean};
 });

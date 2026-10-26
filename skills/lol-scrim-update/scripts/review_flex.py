@@ -1,27 +1,16 @@
 """Transparent role-percentile entertainment awards for tracked allied friends only."""
-import argparse,bisect,json
+import argparse,json
 from pathlib import Path
 from merge import load,save
 import roster_policy
 
-WEIGHTS={
- 'TOP':{'kda':15,'kp':15,'survival':20,'dpm':20,'vision':5,'cc':10,'lane':15},
- 'JUNGLE':{'kda':15,'kp':25,'survival':20,'dpm':15,'vision':10,'cc':10,'lane':5},
- 'MIDDLE':{'kda':15,'kp':20,'survival':20,'dpm':25,'vision':5,'lane':15},
- 'BOTTOM':{'kda':15,'kp':20,'survival':20,'dpm':25,'vision':5,'lane':15},
- 'UTILITY':{'kda':10,'kp':25,'survival':15,'dpm':5,'vision':25,'cc':15,'heal':5},
- 'UNKNOWN':{'kda':20,'kp':30,'survival':30,'vision':20}}
-
-def metrics(p,m):
-    mins=m['duration']/60
-    return {'kda':(p['kills']+p['assists'])/max(1,p['deaths']), 'kp':p['kp'], 'survival':-p['deaths']/mins,
-       'dpm':p['dpm'],'vision':p['vspm'],'cc':p['cc']/mins,'heal':p['healing']/mins,'lane':p['gd15']}
-
 def review(p,m):
-    gd=p['gd15'];score=p['score'];kda=f"{p['kills']}/{p['deaths']}/{p['assists']}"
+    gd=p['gd15'];score=p['score'] if p['score'] is not None else -1;kda=f"{p['kills']}/{p['deaths']}/{p['assists']}"
     evidence=f"{kda}，参团 {p['kp']*100:.1f}%" if p['kp'] is not None else f'{kda}，本队零击杀，参团率不可计算'
     evidence+=f"，DPM {p['dpm']:.0f}，视野/分 {p['vspm']:.2f}"
     evidence+=f"，15 分钟对位金币 {gd:+.0f}" if gd is not None else '，缺少可信 15 分钟对位帧'
+    if score<0:
+        return {'title':'本局暂不计分','roast':'已有数据保留展示，位置、指标或参照补齐后再参加评选。','reason':evidence,'provenance':'位置职责模型v2；缺项不补零'}
     if p['deaths']>=10:
         title='泉水的终身会员'
         lines=['你这不是走位，是给对面送外卖。泉水老板看你这么勤快，已经准备给你排班了。','阵亡提示都快包浆了，对面见你上线，比见兵线还准时。','队友在研究怎么打团，你在研究复活倒计时有没有会员加速。']
@@ -51,33 +40,13 @@ def review(p,m):
 def main():
     a=argparse.ArgumentParser(description=__doc__);a.add_argument('--site',required=True);args=a.parse_args()
     site=Path(args.site);d=load(site/'data.json');roster_policy.apply(d,roster_policy.load_policy(site));assert d['datasetType'] in ['flex','friends-flex']
-    pools={}
+    save(site/'data.json',d)
+    from scoring_runtime import update_scores
+    update_scores(site)
+    d=load(site/'data.json')
     for m in d['matches']:
         for p in m['players']:
-            for metric,v in metrics(p,m).items():
-                if v is not None:pools.setdefault((p['role'],metric),[]).append(v)
-    pools={k:sorted(v) for k,v in pools.items()}
-    for m in d['matches']:
-        for p in m['players']:
-            weights=WEIGHTS[p['role']];scores={}
-            for metric,v in metrics(p,m).items():
-                values=pools.get((p['role'],metric),[])
-                if v is None or metric not in weights or len(values)<5:continue
-                # Mid-rank percentiles give tied zero values equal credit.
-                scores[metric]=100*(bisect.bisect_left(values,v)+bisect.bisect_right(values,v))/(2*len(values))
-            p['score']=round(sum(v*weights[k] for k,v in scores.items())/sum(weights[k] for k in scores),1) if scores else 50
-            p['scoreMetrics']=scores;p['review']=review(p,dict(m,selfWin=p['win']))
-        ranked=sorted(m['players'],key=lambda p:(p['score'],p['key']),reverse=True)
-        if d['datasetType']=='friends-flex':
-            m['friendAwardsByTeam']={}
-            for side in m['trackedTeams']:
-                ps=[p for p in ranked if p['team']==side]
-                m['friendAwardsByTeam'][str(side)]={'best':ps[0]['key'],'worst':ps[-1]['key'] if len(ps)>1 else None,'category':'mvp' if ps[0]['win'] else 'svp','alternative':ps[1]['key'] if len(ps)>1 else None,'candidateCount':len(ps)}
-        else:m['friendAwards']={'best':ranked[0]['key'],'worst':ranked[-1]['key'],'category':'mvp' if m['selfWin'] else 'svp','alternative':ranked[1]['key']}
-    d['scoring']={'type':'规则辅助娱乐评选','referenceGames':len(d['matches']),'weights':WEIGHTS,
-      'methodology':'按本数据集内相同位置的单局样本计算指标中位秩百分位，按权重合成 0–100 分；未满 5 个位置样本的指标和缺失指标不参与，并对剩余权重重新归一。阵亡使用每分钟死亡的负值；KDA 分母最少为 1。辅助重视参团、视野、控制，不以 DPM 单独决定。分数基准随新比赛导入更新，筛选只改变汇总范围。',
-      'limits':'只在本人和当前好友中比较；没有陌生人和敌方选手评奖。位置指标不能衡量英雄全部职责，治疗包括自疗，控制不等于关键控制，缺少语音与回放判断；不能据此断言输赢责任。总评至少 5 场，所选不足 5 场时按实际场数，并显示最低门槛。'}
-    if d['datasetType']=='friends-flex':d['scoring']['limits']='逐局按各侧名单选手分别比较，至少两位同侧候选才评奖；单人场次展示个人战报。集合奖项按个人实际胜局或败局汇总，至少 5 场，短集合按实际场数。'
+            p['review']=review(p,dict(m,selfWin=p['win']))
     save(site/'data.json',d)
     print(json.dumps({'games':len(d['matches']),'reviewedPlayerGames':sum(len(m['players']) for m in d['matches'])}))
 

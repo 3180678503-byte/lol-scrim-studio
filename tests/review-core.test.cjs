@@ -5,10 +5,10 @@ const m=(id,players=[p(1)],extra={})=>({matchKey:'HN1:'+id,number:id,duration:12
 test('calibration excludes current appearance, isolates role/patch and needs five other valid rows',()=>{
  const target=m(1),refs=Array.from({length:5},(_,i)=>m(i+2,[p(1,{damage:10000+i*1000})]));
  const d={matches:[target,...refs,m(9,[p(1,{damage:99999})],{patch:'16.19.1'}),m(10,[p(1,{role:'TOP',damage:999999})])]};
- const model=C.calibrated(d,target,target.players[0]);assert.equal(model.samples,5);assert.equal(model.coverage,100);assert(model.score>=0&&model.score<=100);assert.equal(model.axes.find(a=>a.key==='dpm').score,50);
- const sparse=C.calibrated({matches:[target,...refs.slice(0,4)]},target,target.players[0]);assert.equal(sparse.score,null);assert.equal(sparse.coverage,0);
- const heroSparse={matches:[target,...refs.map((g,i)=>({...g,players:[{...g.players[0],championId:i?2:1}]}))]};assert.equal(C.calibrated(heroSparse,target,target.players[0],'hero').score,null);
- assert.equal(C.calibrated(d,target,p(1,{role:'UNKNOWN'})).score,null);
+ const model=C.legacyCalibrated(d,target,target.players[0]);assert.equal(model.samples,5);assert.equal(model.coverage,100);assert(model.score>=0&&model.score<=100);assert.equal(model.axes.find(a=>a.key==='dpm').score,50);
+ const sparse=C.legacyCalibrated({matches:[target,...refs.slice(0,4)]},target,target.players[0]);assert.equal(sparse.score,null);assert.equal(sparse.coverage,0);
+ const heroSparse={matches:[target,...refs.map((g,i)=>({...g,players:[{...g.players[0],championId:i?2:1}]}))]};assert.equal(C.legacyCalibrated(heroSparse,target,target.players[0],'hero').score,null);
+ assert.equal(C.legacyCalibrated(d,target,p(1,{role:'UNKNOWN'})).score,null);
 });
 test('minute metrics preserve equal pace across lengths; short games cannot invent GD15',()=>{
  const a=m(1),b=m(2,[p(1,{damage:24000,vision:40,cs:300,cc:100,deaths:4})],{duration:2400});
@@ -18,7 +18,7 @@ test('minute metrics preserve equal pace across lengths; short games cannot inve
 });
 test('duplicate games do not inflate references, and death percentile is reversed',()=>{
  const target=m(1,[p(1,{deaths:0})]),refs=Array.from({length:5},(_,i)=>m(i+2,[p(1)]));
- const model=C.calibrated({matches:[target,target,...refs,...refs]},target,target.players[0]);assert.equal(model.samples,5);assert.equal(model.axes.find(a=>a.key==='survival').score,100);
+ const model=C.legacyCalibrated({matches:[target,target,...refs,...refs]},target,target.players[0]);assert.equal(model.samples,5);assert.equal(model.axes.find(a=>a.key==='survival').score,100);
 });
 test('turning points use actual nonoverlapping windows and do not invent missing frames',()=>{
  const game=m(1,undefined,{duration:900,frames:Array.from({length:16},(_,i)=>({seconds:i*60,gap:i<4?0:i<8?3000:i<12?-1000:5000})),events:[]});
@@ -39,5 +39,5 @@ test('reviews connect correct player and team with bounded event windows',()=>{
 });
 test('every role has 100 percent explicit weights and no missing metric turns into zero',()=>{
  for(const cfg of Object.values(C.CONFIG))assert.equal(Object.values(cfg).reduce((a,b)=>a+b,0),100);
- const target=m(1,[p(1,{sampleTime15:null})]),data={matches:[target,...Array.from({length:8},(_,i)=>m(i+2))]};const model=C.calibrated(data,target,target.players[0]);assert.equal(model.score,null);assert.equal(model.coverage,80);assert.equal(model.axes.find(a=>a.key==='gd15').value,null);
+ const target=m(1,[p(1,{sampleTime15:null})]),data={matches:[target,...Array.from({length:8},(_,i)=>m(i+2))]};const model=C.legacyCalibrated(data,target,target.players[0]);assert.equal(model.score,null);assert.equal(model.coverage,80);assert.equal(model.axes.find(a=>a.key==='gd15').value,null);
 });
