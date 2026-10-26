@@ -4,7 +4,7 @@ const read=folder=>JSON.parse(fs.readFileSync(path.join(root,folder,'data.json')
 function awardRecords(matches){
  const result=[];
  for(const [category,outcome,best] of [['mvp','all',true],['svp','losses',true],['winWorst','wins',false],['loseWorst','losses',false]]){
-  const groups=new Map();for(const m of matches)for(const p of m.players){if(outcome!=='all'&&p.win!==(outcome==='wins'))continue;const rs=groups.get(p.key)||[];rs.push({m,p});groups.set(p.key,rs);}
+  const groups=new Map();for(const m of matches)for(const p of m.players){if((outcome!=='all'&&p.win!==(outcome==='wins'))||(matches.length===1&&category==='mvp'&&!p.win))continue;const rs=groups.get(p.key)||[];rs.push({m,p});groups.set(p.key,rs);}
   const candidates=[...groups].map(([key,rows])=>({key,rows,...S.aggregate(rows.map(r=>r.p))})).filter(r=>r.scoreSamples>0);
   const minimum=Math.min(5,...[Math.max(0,...candidates.map(c=>c.scoreSamples))]);
   const ranked=candidates.filter(c=>c.scoreSamples>=minimum).sort((a,b)=>(best?-1:1)*((matches.length===1?a.score:a.rankScore)-(matches.length===1?b.score:b.rankScore))||a.key.localeCompare(b.key));
@@ -16,6 +16,7 @@ function awardRecords(matches){
  }
  return result;
 }
+function main(){
 let reference=null;
 const outputs=[];
 for(const folder of folders){
@@ -57,3 +58,6 @@ for(const folder of folders){
  fs.writeFileSync(file,JSON.stringify(data));outputs.push({dataset:folder||'scrim',matches:data.matches.length,complete,total:data.matches.reduce((s,m)=>s+m.players.length,0),baselineVersion});
 }
 console.log(JSON.stringify({version:S.VERSION,datasets:outputs}));
+}
+if(require.main===module)main();
+module.exports={awardRecords};

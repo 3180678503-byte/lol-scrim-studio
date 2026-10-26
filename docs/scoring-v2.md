@@ -57,6 +57,6 @@ python skills/lol-scrim-update/scripts/build.py --site flex --resource-root .
 
 Python采集流程调用相同Node引擎。Node不可用时设置`SCRIM_NODE`为Node可执行文件完整路径；失败会终止构建，避免发布混合版本。
 
-旧分保存在每位选手的`legacyScore`，内战历史点评在`legacyAwards`。网页排行和复盘页可直接对照旧分。完整回退使用部署提交的`git revert <提交号>`，同时恢复界面、数据、日报和评分脚本；无需删除比赛。改版前的本机完整数据备份放在仓库外的`outputs/scoring-v2-20261027/rollback/`。
+旧分保存在每位选手的`legacyScore`（内战为原版雷达分），内战历史点评在`legacyAwards`。网页排行和复盘页可直接对照旧分。改版前的 Git 标签是`before-score-v2-20261027`，发布标签是`score-v2-20261027`。完整回退可执行`git revert --no-commit before-score-v2-20261027..score-v2-20261027`，复核后提交，同时恢复界面、数据、日报和评分脚本。改版前的本机完整数据备份放在仓库外的`outputs/scoring-v2-20261027/rollback/`。
 
 自动检查覆盖位置权重、短局帧、缺项、未知位置、整局排除、去重、未来版本排除、英雄修正门槛、少场收缩、跨页面分数一致、日报与雷达一致。
