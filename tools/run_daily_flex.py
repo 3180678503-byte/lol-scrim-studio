@@ -1,5 +1,5 @@
 """Collect a four-AM flex day, validate in staging, then publish public artifacts."""
-import argparse,base64,datetime as dt,hashlib,json,os,shutil,subprocess,sys,tempfile,urllib.parse,urllib.request
+import argparse,base64,datetime as dt,hashlib,json,os,shutil,subprocess,sys,tempfile,time,urllib.parse,urllib.request
 from pathlib import Path
 
 ZONE=dt.timezone(dt.timedelta(hours=8))
@@ -9,6 +9,7 @@ sys.path.insert(0,str(ROOT/'skills/lol-scrim-update/scripts'))
 from collection_window import parse_window,in_window
 from collect_flex import write
 from league_client_session import ClientSession,WindowsBackend
+from publishing_io import git_proxy,copy_publication_files
 
 def period_window(day=None,now=None,last_success=None):
     now=now or dt.datetime.now(ZONE)
@@ -96,7 +97,20 @@ def main():
             if token_result.returncode:raise RuntimeError('GitHub CLI authorization unavailable')
             token=token_result.stdout.strip();header='AUTHORIZATION: basic '+base64.b64encode(('x-access-token:'+token).encode()).decode()
             secret_values=[token,header];auth_env.update(SCRIM_DAILY_AUTH_HEADER=header,GIT_TERMINAL_PROMPT='0',GH_TOKEN=token)
-            def git_network(*arguments):return git('-c','credential.helper=','--config-env=http.'+remote+'.extraHeader=SCRIM_DAILY_AUTH_HEADER',*arguments)
+            proxy=git_proxy(args.git,remote,auth_env)
+            proxy_options=[]
+            if proxy is not None:
+                auth_env['SCRIM_GITHUB_PROXY']=proxy
+                proxy_options=['--config-env=http.proxy=SCRIM_GITHUB_PROXY']
+                if proxy:secret_values.append(proxy)
+            record['gitProxyConfigured']=bool(proxy)
+            def git_network(*arguments):
+                command=[args.git,'-C',site,'-c','credential.helper=',*proxy_options,'--config-env=http.'+remote+'.extraHeader=SCRIM_DAILY_AUTH_HEADER',*arguments]
+                for attempt in range(3):
+                    try:return run(command,'git network '+arguments[0],timeout=120)
+                    except (RuntimeError,subprocess.TimeoutExpired):
+                        if attempt==2:raise
+                        time.sleep(2*(attempt+1))
             publish_site=run_dir/'publish-site'
             create_publish_checkout(source_site,publish_site,args.git,remote,run)
             site=publish_site;record['publishSite']=str(site);write(run_dir/'result.json',record)
@@ -147,14 +161,14 @@ def main():
             for folder in ['','friends','flex']:
                 run([sys.executable,staged_scripts/'build.py','--site',stage/folder,'--resource-root',stage,'--download-icons'],'validate and build '+(folder or 'scrim'),cwd=stage)
             if (site/'data.json').read_bytes()!=(stage/'data.json').read_bytes():raise RuntimeError('Scrim history changed during flex update')
-            paths=[Path(f) for f in ['friends/data.json','friends/data.js','flex/data.json','flex/data.js','community-meta.js','backend/manifest.json']]
-            for folder in ['friends/reports','flex/reports','assets']:
+            paths=[Path(f) for f in ['friends/data.json','friends/data.js','friends/overview-data.js','friends/data-manifest.json','flex/data.json','flex/data.js','flex/overview-data.js','flex/data-manifest.json','community-meta.js','backend/manifest.json']]
+            for folder in ['friends/reports','flex/reports','friends/matches','flex/matches','assets']:
                 paths.extend(p.relative_to(stage) for p in (stage/folder).rglob('*') if p.is_file())
             changed=[rel for rel in paths if not (site/rel).exists() or hashlib.sha256((site/rel).read_bytes()).digest()!=hashlib.sha256((stage/rel).read_bytes()).digest()]
             record['changedFiles']=len(changed)
             if args.publish and (git('status','--porcelain') or git('rev-parse','HEAD')!=base_head):raise RuntimeError('Repository changed during collection; preserve current edits and retry after review')
             if not args.prepare_only:
-                for rel in changed:(site/rel).parent.mkdir(parents=True,exist_ok=True);shutil.copy2(stage/rel,site/rel)
+                copy_publication_files(stage,site,changed)
             if args.publish and changed:
                 # All historical reports are regenerated together. Their file
                 # list can exceed Windows' command-line limit, so Git reads
@@ -168,7 +182,6 @@ def main():
                 git_network('fetch','origin','main');git('rebase','origin/main');git_network('push','origin','HEAD:main')
                 commit=git('rev-parse','HEAD');record['commit']=commit
                 repo=remote.removesuffix('.git').removeprefix('https://github.com/')
-                import time
                 built=False
                 for attempt in range(12):
                     response=run([args.gh,'api','repos/'+repo+'/pages/builds/latest','--jq','{status,commit,error:.error.message}'],'check Pages build',timeout=60)
@@ -182,11 +195,11 @@ def main():
                     request=urllib.request.Request(base+folder+'?daily='+commit,headers={'User-Agent':'Mozilla/5.0'})
                     with urllib.request.urlopen(request,timeout=30) as response:
                         if response.status!=200:raise RuntimeError('Public website verification failed')
-                    request=urllib.request.Request(base+folder+'data.json?daily='+commit,headers={'User-Agent':'Mozilla/5.0'})
+                    request=urllib.request.Request(base+folder+'data-manifest.json?daily='+commit,headers={'User-Agent':'Mozilla/5.0'})
                     with urllib.request.urlopen(request,timeout=30) as response:public=json.load(response)
                     expected_keys={m['matchKey'] for m in json.loads((stage/folder/'data.json').read_text(encoding='utf-8'))['matches']}
-                    public_keys={m['matchKey'] for m in public['matches']}
-                    if not expected_keys<=public_keys or len(public_keys)!=len(public['matches']):raise RuntimeError('Published data is incomplete or duplicated')
+                    public_keys=set(public['matchKeys'])
+                    if not expected_keys<=public_keys or len(public_keys)!=len(public['matchKeys']):raise RuntimeError('Published data is incomplete or duplicated')
                 record['website']=base+'friends/'
                 # Refresh the ordinary checkout only if Git can preserve its
                 # unrelated edits. A local conflict must not undo a verified

@@ -91,7 +91,12 @@ function compute(ctx,m,p){
  const coverage=axes.filter(a=>finite(a.score)).reduce((s,a)=>s+a.weight,0),score=coverage===100?round(axes.reduce((s,a)=>s+a.contribution,0)):null;
  return {version:VERSION,score,coverage,role:p.role,patch:patch(m),profile:duty,profileLabel:PROFILE_LABELS[duty],axes,samples:Math.min(...axes.map(a=>a.n)),reason:score==null?'指标缺失或参照不足':null};
 }
-function score(data,m,p){return p.performance?.version===VERSION?p.performance:compute(context(data),m,p);}
+function score(data,m,p){
+ const model=p.performance?.version===VERSION?p.performance:compute(context(data),m,p);
+ if(!model.compact)return model;
+ const config=radarAxes(p.role);
+ return {...model,axes:model.axes.map((a,i)=>({...config[i],...a,value:a.score,contribution:finite(a.score)?a.score*config[i].weight/100:null,metrics:[]}))};
+}
 function aggregate(rows){const valid=rows.filter(r=>finite(r.score)),n=valid.length,average=mean(valid.map(r=>r.score));return {score:average,rankScore:average==null?null:50+n/(n+10)*(average-50),scoreSamples:n,provisional:n<5};}
 function radarSide(data,rows,role){
  const models=rows.map(r=>score(data,r.match,r.player)),complete=models.filter(x=>finite(x.score)),used=complete.length?complete:models;

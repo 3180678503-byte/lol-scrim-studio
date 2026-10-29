@@ -165,4 +165,6 @@ function showPlayer(key){
  if(['overview','awards','players','radar','draft','review','methods','compare','community','lab'].includes(location.hash.slice(1)))state.view=location.hash.slice(1);
  window.addEventListener('hashchange',()=>{const view=location.hash.slice(1);if(['overview','awards','players','radar','draft','review','methods','compare','community','lab'].includes(view)&&state.view!==view){state.view=view;render();}});
  render();
+window.addEventListener('scrim-details-ready',()=>{if(['lab','community','review'].includes(state.view))render();});
+window.SCRIM_READY=true;
 })();

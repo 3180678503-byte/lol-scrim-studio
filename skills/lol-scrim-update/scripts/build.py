@@ -60,7 +60,8 @@ def main():
                 raise ValueError('Regenerate reviews after roster changes')
     def js(value):
         return 'window.SCRIM_DATA='+json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).replace('<','\\u003c').replace('\u2028','\\u2028').replace('\u2029','\\u2029')+';'
-    (site/'data.js').write_text(js(data),encoding='utf-8')
+    from public_assets import write_public_assets
+    write_public_assets(site,data,js)
     missing=[]
     for cid in data['champions']:
         if not str(cid).isdigit():
@@ -83,7 +84,7 @@ def main():
         portable['iconData']={cid:'data:image/png;base64,'+base64.b64encode((resources/'assets'/('champion-'+cid+'.png')).read_bytes()).decode() for cid in data['champions'] if cid not in missing}
         html=(site/'index.html').read_text(encoding='utf-8')
         html=re.sub(r'<link rel="stylesheet" href="([^"]+)">',lambda m:'<style>'+(site/m[1].split('?',1)[0]).read_text(encoding='utf-8')+'</style>',html)
-        html=re.sub(r'<script src="data.js(?:\?[^"]*)?"></script>',lambda m:'<script>'+js(portable)+'</script>',html)
+        html=re.sub(r'<script src="(?:overview-data|data).js(?:\?[^"]*)?"></script>',lambda m:'<script>'+js(portable)+'</script>',html)
         html=re.sub(r'<script src="([^"]+)"></script>',lambda m:'<script>'+(site/m[1].split('?',1)[0]).read_text(encoding='utf-8').replace('</script','<\\/script')+'</script>',html)
         target=Path(args.html);target.parent.mkdir(parents=True,exist_ok=True);target.write_text(html,encoding='utf-8')
     print(json.dumps({'matches':len(keys),'missingChampionIcons':missing,'offlineHtml':bool(args.html)}))
